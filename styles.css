@@ -894,3 +894,162 @@ body,#app{min-height:100vh;min-height:100dvh}
     background-position:center 86%;
   }
 }
+
+
+/* V17 — mobile viewport fit + clean controls */
+
+/* The home dashboard must fit inside one app viewport, without page scrolling. */
+.home-screen{
+  height:100dvh;
+  min-height:0;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+
+/* Let the scenic photograph occupy only whatever space remains. */
+.home-ranch-scene{
+  flex:1 1 0;
+  min-height:118px;
+  margin-top:0;
+  background-position:center 82%;
+}
+
+/* Clean the search/owner row: the rounded input itself is the only visible surface. */
+.cattle-tools{
+  align-items:stretch;
+}
+.search-wrap{
+  background:transparent!important;
+  border:0!important;
+  border-radius:0!important;
+  overflow:visible!important;
+}
+.search-wrap input{
+  display:block;
+  height:100%;
+  min-height:54px;
+  margin:0;
+  border-radius:18px;
+  background:rgba(255,253,247,.96);
+  box-shadow:0 5px 16px rgba(86,67,42,.06);
+}
+#ownersBtn{
+  border-radius:18px;
+}
+
+/* Chat: remove the square panel/corners around the fixed composer. */
+.chat-screen{
+  padding-left:20px;
+  padding-right:20px;
+}
+.chat-composer{
+  margin-left:-20px;
+  margin-right:-20px;
+  padding:10px 20px calc(10px + env(safe-area-inset-bottom));
+  background:
+    linear-gradient(180deg,rgba(228,214,194,.18),rgba(228,214,194,.96) 20%);
+  border-top:0;
+}
+.chat-compose-box{
+  overflow:hidden;
+  border-radius:24px;
+  background:rgba(255,253,247,.97);
+  border:1px solid rgba(91,75,55,.16);
+  box-shadow:0 -3px 18px rgba(86,67,42,.07);
+}
+.chat-compose-box textarea{
+  border-radius:0;
+}
+.photo-button{
+  border-radius:15px;
+}
+.chat-composer .primary{
+  border-radius:15px;
+}
+
+/* Other rounded controls should not reveal square wrapper backgrounds. */
+.cattle-header-actions,
+.back-title,
+.composer-row{
+  background:transparent!important;
+}
+
+@media(max-width:420px){
+  .home-screen{
+    padding:16px 20px 0;
+  }
+  .home-screen .topbar{
+    margin-bottom:14px;
+  }
+  .home-screen .app-brand{
+    margin-bottom:14px;
+    padding-bottom:10px;
+    font-size:1.12rem;
+  }
+  .home-screen .farm-name{
+    font-size:2.55rem;
+    line-height:.91;
+  }
+  .home-screen .icon-button{
+    margin-top:22px;
+  }
+  .home-screen .home-actions{
+    gap:12px;
+  }
+  .home-screen .home-card{
+    min-height:92px;
+    padding:14px 18px;
+    border-radius:25px;
+  }
+  .home-screen .home-card-icon{
+    width:50px;
+    height:50px;
+    border-radius:15px;
+  }
+  .home-screen .home-card-title{
+    font-size:1.2rem;
+  }
+  .home-screen .home-card-sub{
+    margin-top:4px;
+    font-size:.88rem;
+  }
+  .home-screen .home-summary{
+    margin-top:14px;
+    padding:14px 4px 10px;
+  }
+  .home-screen .mini-stat strong{
+    font-size:1.5rem;
+  }
+  .home-screen .mini-stat span{
+    margin-top:3px;
+    font-size:.76rem;
+  }
+  .home-ranch-scene{
+    min-height:110px;
+    flex:1 1 0;
+    background-position:center 84%;
+  }
+
+  .chat-screen{
+    padding-left:14px;
+    padding-right:14px;
+  }
+  .chat-composer{
+    margin-left:-14px;
+    margin-right:-14px;
+    padding-left:14px;
+    padding-right:14px;
+  }
+}
+
+/* Extra compression for shorter phone/browser viewports. */
+@media(max-height:760px){
+  .home-screen .app-brand{margin-bottom:10px}
+  .home-screen .farm-name{font-size:2.3rem}
+  .home-screen .topbar{margin-bottom:10px}
+  .home-screen .home-card{min-height:82px;padding:11px 16px}
+  .home-screen .home-card-icon{width:46px;height:46px}
+  .home-screen .home-summary{margin-top:10px;padding-top:10px;padding-bottom:6px}
+  .home-ranch-scene{min-height:90px}
+}
