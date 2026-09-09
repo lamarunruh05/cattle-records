@@ -652,3 +652,209 @@ body,#app{min-height:100vh;min-height:100dvh}
     max-height:128px;
   }
 }
+
+
+/* V15 — home page rebuilt to closely match the approved ranch concept */
+.home-screen{
+  position:relative;
+  width:min(760px,100%);
+  min-height:100vh;
+  min-height:100dvh;
+  padding:24px 20px 0;
+  overflow:hidden;
+  background:
+    linear-gradient(180deg,rgba(238,211,169,.96) 0%,rgba(222,187,137,.95) 52%,rgba(198,157,105,.94) 100%);
+}
+
+/* Fine paper/ranch texture without affecting controls */
+.home-screen::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:.22;
+  background-image:
+    radial-gradient(circle at 20% 10%,rgba(255,255,255,.42) 0 1px,transparent 1.5px),
+    radial-gradient(circle at 80% 40%,rgba(89,62,34,.18) 0 1px,transparent 1.4px);
+  background-size:19px 23px,27px 31px;
+  mix-blend-mode:soft-light;
+}
+.home-screen > *{position:relative;z-index:1}
+
+.home-screen .topbar{
+  margin-bottom:28px;
+  align-items:flex-start;
+}
+.home-screen .app-brand{
+  position:relative;
+  display:inline-block;
+  margin:0 0 24px;
+  padding-bottom:12px;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:1.35rem;
+  line-height:1;
+  font-weight:900;
+  font-style:italic;
+  letter-spacing:.025em;
+  color:#173d2a;
+  text-transform:uppercase;
+}
+.home-screen .app-brand::after{
+  content:"";
+  position:absolute;
+  left:0;
+  bottom:0;
+  width:190px;
+  height:1px;
+  background:rgba(23,61,42,.48);
+}
+.home-screen .app-brand::before{
+  content:"◆";
+  position:absolute;
+  left:112px;
+  bottom:-7px;
+  padding:0 6px;
+  font-size:.52rem;
+  color:#9d8a66;
+  background:#e8cda5;
+  z-index:2;
+}
+.home-screen .farm-name{
+  max-width:590px;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:clamp(2.65rem,9vw,4.25rem);
+  line-height:.94;
+  letter-spacing:-.045em;
+  color:#173d2a;
+  font-weight:800;
+}
+.home-screen .icon-button{
+  margin-top:30px;
+  color:#173d2a;
+  font-size:1.65rem;
+}
+
+.home-screen .home-actions{
+  gap:16px;
+}
+.home-screen .home-card{
+  min-height:116px;
+  border-radius:28px;
+  padding:22px 26px;
+  background:rgba(255,249,239,.94);
+  border:1px solid rgba(255,255,255,.58);
+  box-shadow:0 14px 30px rgba(92,61,28,.13);
+}
+.home-screen .home-card-icon{
+  width:58px;
+  height:58px;
+  border-radius:17px;
+  background:rgba(204,213,187,.75);
+  font-size:1.45rem;
+}
+.home-screen .home-card-title{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:1.42rem;
+  color:#173d2a;
+}
+.home-screen .home-card-sub{
+  margin-top:7px;
+  font-size:1rem;
+  color:#71766e;
+}
+.home-screen .chevron{
+  font-size:1.8rem;
+  color:#6d746e;
+}
+
+.home-screen .home-summary{
+  margin-top:26px;
+  padding:23px 4px 16px;
+  border-top:1px solid rgba(255,255,255,.55);
+  gap:0;
+}
+.home-screen .mini-stat{
+  padding:0 10px;
+  position:relative;
+}
+.home-screen .mini-stat + .mini-stat::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:3px;
+  bottom:3px;
+  width:1px;
+  background:rgba(80,72,56,.28);
+}
+.home-screen .mini-stat strong{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:1.7rem;
+  color:#173d2a;
+}
+.home-screen .mini-stat span{
+  display:block;
+  margin-top:6px;
+  font-size:.83rem;
+  color:#59655d;
+}
+
+/* Real scenic footer taken from the approved concept rather than an SVG silhouette. */
+.home-ranch-scene{
+  position:relative;
+  z-index:0!important;
+  width:calc(100% + 40px);
+  margin-left:-20px;
+  margin-top:2px;
+  min-height:420px;
+  flex:1 0 420px;
+  background-image:
+    linear-gradient(180deg,rgba(222,187,137,.98) 0%,rgba(222,187,137,.40) 14%,rgba(23,35,24,.04) 42%),
+    url("ranch-scene.jpg");
+  background-size:cover;
+  background-position:center bottom;
+  background-repeat:no-repeat;
+}
+.home-ranch-scene::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(180deg,transparent 62%,rgba(22,31,22,.10));
+  pointer-events:none;
+}
+.scene-motto{
+  position:absolute;
+  right:7%;
+  top:24%;
+  z-index:2;
+  transform:rotate(-7deg);
+  color:#173d2a;
+  text-align:right;
+  font-family:"Segoe Script","Bradley Hand","Brush Script MT",cursive;
+  font-size:1.28rem;
+  font-weight:700;
+  line-height:1.02;
+  text-shadow:0 1px 0 rgba(255,236,201,.45);
+}
+.scene-motto span{font-size:1.08em}
+
+@media(max-width:420px){
+  .home-screen{padding:22px 20px 0}
+  .home-screen .topbar{margin-bottom:24px}
+  .home-screen .app-brand{font-size:1.2rem;margin-bottom:22px}
+  .home-screen .farm-name{font-size:2.75rem}
+  .home-screen .icon-button{margin-top:27px}
+  .home-screen .home-card{min-height:108px;padding:18px 20px}
+  .home-screen .home-card-icon{width:54px;height:54px}
+  .home-screen .home-card-title{font-size:1.28rem}
+  .home-screen .home-card-sub{font-size:.92rem}
+  .home-ranch-scene{
+    min-height:390px;
+    flex-basis:390px;
+    background-position:center bottom;
+  }
+  .scene-motto{
+    top:22%;
+    right:7%;
+    font-size:1.05rem;
+  }
+}

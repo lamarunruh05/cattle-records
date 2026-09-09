@@ -43,55 +43,10 @@ function usePage(html){
 function render(){if(view.page==="login")return renderLogin();if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();return renderHome()}
 function renderLogin(){usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Enter your username to open the shared farm records.</p><form id="loginForm" class="stack"><label><span>Username</span><input id="usernameInput" maxlength="40" required placeholder="Your name"></label><button class="primary" type="submit">Continue</button></form></section></main>`);document.getElementById("loginForm").addEventListener("submit",e=>{e.preventDefault();const u=document.getElementById("usernameInput").value.trim();if(!u)return;state.currentUser=u;saveState();view.page="home";render()})}
 function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null,calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length,dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>
-<div class="ranch-footer" aria-hidden="true">
-  <div class="ranch-mark">
-    <svg viewBox="0 0 500 190">
-  <path class="fence" d="M30 145h440M64 110v58M132 116v52M368 116v52M436 110v58"/>
-  <path class="ground" d="M20 158c45-10 72 5 112-2 43-8 77 7 120-1 44-8 82 6 125-1 38-6 69 4 105-2"/>
-
-  <g class="cow-shape">
-    <path d="M108 91
-      C112 61 139 47 183 47
-      L257 49
-      C281 50 299 60 310 76
-      L326 70
-      C337 59 353 55 369 59
-      L390 69
-      L386 88
-      L369 99
-      L336 98
-      C329 111 317 119 300 123
-      L295 159 L279 159 L274 126
-      L184 126 L178 159 L162 159 L160 125
-      L132 121 L126 159 L110 159 L111 116
-      C97 108 94 99 108 91 Z"/>
-    <path d="M350 60 L343 43 L359 56 M373 61 L388 45 L383 65"/>
-    <path d="M108 91 C86 84 79 101 89 116"/>
-    <circle cx="374" cy="75" r="2.7" class="eye"/>
-  </g>
-
-  <g class="calf-shape">
-    <path d="M321 123
-      C326 104 344 96 372 97
-      L418 99
-      C433 100 443 107 449 117
-      L460 113
-      C469 106 481 108 488 116
-      L484 130
-      L469 136
-      L450 134
-      C443 143 434 147 422 149
-      L420 169 L409 169 L406 150
-      L356 150 L353 169 L342 169 L341 149
-      L329 146 L326 169 L315 169 L316 143
-      C308 136 310 128 321 123 Z"/>
-    <path d="M469 111 L466 101 L475 109 M482 114 L490 105 L488 118"/>
-    <circle cx="480" cy="121" r="2.2" class="eye"/>
-  </g>
-</svg>
-    <div class="ranch-tagline">Cattle Records</div>
-  </div>
-</div></main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render()};document.getElementById("openChat").onclick=()=>{view.page="chat";render()};document.getElementById("menuBtn").onclick=showFarmMenu}
+<section class="home-ranch-scene" aria-hidden="true">
+  <div class="scene-motto">Healthy Cattle<br><span>Stronger Tomorrows</span></div>
+</section>
+</main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render()};document.getElementById("openChat").onclick=()=>{view.page="chat";render()};document.getElementById("menuBtn").onclick=showFarmMenu}
 function renderCattle(){
   let cows=sortedCows(state.cows);
   if(view.ownerFilter)cows=cows.filter(c=>c.owner===view.ownerFilter);
