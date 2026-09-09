@@ -203,29 +203,6 @@ body.cow-layout #app{
 
 
 /* V9 batch calf entry */
-.batch-calves-entry{
-  width:100%;
-  margin:10px 0 14px;
-  min-height:56px;
-  padding:10px 14px;
-  background:var(--accent-soft);
-  color:var(--accent);
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  text-align:left;
-}
-.batch-calves-entry strong{
-  display:block;
-  font-size:.94rem;
-}
-.batch-calves-entry small{
-  display:block;
-  margin-top:2px;
-  color:var(--muted);
-  font-size:.7rem;
-  font-weight:650;
-}
 .batch-calves-modal{
   width:min(700px,calc(100vw - 20px));
   max-height:88dvh;
@@ -301,4 +278,53 @@ body.cow-layout #app{
   .batch-cow-list{
     max-height:48dvh;
   }
+}
+
+
+/* V10 combined Add menu */
+.add-menu-modal{
+  width:min(520px,calc(100vw - 28px));
+}
+.add-choice-grid{
+  display:grid;
+  gap:10px;
+  margin-top:14px;
+}
+.add-choice{
+  width:100%;
+  min-height:76px;
+  padding:13px 14px;
+  border:1px solid var(--line);
+  background:var(--panel);
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  gap:12px;
+  text-align:left;
+}
+.add-choice:active{
+  transform:scale(.99);
+}
+.add-choice-icon{
+  flex:0 0 42px;
+  width:42px;
+  height:42px;
+  border-radius:13px;
+  background:var(--accent-soft);
+  color:var(--accent);
+  display:grid;
+  place-items:center;
+  font-size:1.5rem;
+  font-weight:700;
+}
+.add-choice strong{
+  display:block;
+  font-size:.96rem;
+}
+.add-choice small{
+  display:block;
+  margin-top:3px;
+  color:var(--muted);
+  font-size:.72rem;
+  font-weight:600;
 }

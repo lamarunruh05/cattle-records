@@ -59,7 +59,7 @@ function renderCattle(){
       </div>
       <div class="cattle-header-actions">
         <button class="soft small" id="herdScoreBtn">Scorecard</button>
-        <button class="primary small" id="addCowBtn">+ Cow</button>
+        <button class="primary small" id="addMenuBtn">+ Add</button>
       </div>
     </header>
 
@@ -70,14 +70,6 @@ function renderCattle(){
       </div>
       <button class="soft" id="ownersBtn">Owners</button>
     </section>
-
-    <button class="batch-calves-entry" id="batchCalvesBtn">
-      <span>
-        <strong>+ Add calves</strong>
-        <small>Add the same birth date to several cows</small>
-      </span>
-      <span>›</span>
-    </button>
 
     ${view.ownerFilter?`<div class="filter-bar"><span>Owner: ${esc(view.ownerFilter)}</span><button class="link-btn" id="clearOwner">Clear</button></div>`:""}
 
@@ -95,10 +87,9 @@ function renderCattle(){
   </main>`);
 
   document.getElementById("backHome").onclick=()=>{view.page="home";render()};
-  document.getElementById("addCowBtn").onclick=showAddCowModal;
+  document.getElementById("addMenuBtn").onclick=showAddMenu;
   document.getElementById("herdScoreBtn").onclick=()=>{view.page="herdScorecard";render()};
   document.getElementById("ownersBtn").onclick=showOwnersModal;
-  document.getElementById("batchCalvesBtn").onclick=showBatchCalvesModal;
 
   if(view.ownerFilter){
     document.getElementById("clearOwner").onclick=()=>{view.ownerFilter="";render()};
@@ -352,6 +343,46 @@ function setupChatComposer(){const input=document.getElementById("chatPhoto"),wr
 function openModal(html,onReady){modalRoot.innerHTML=`<div class="modal-backdrop"><section class="modal">${html}</section></div>`;const b=modalRoot.querySelector(".modal-backdrop");b.onclick=e=>{if(e.target===b)closeModal()};onReady?.()}
 function closeModal(){modalRoot.innerHTML=""}
 function showOwnersModal(){const owners=[...new Set(state.cows.map(c=>c.owner).filter(Boolean))].sort((a,b)=>a.localeCompare(b));openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Filter cattle</p><h2>Owners</h2></div><button class="icon-button" id="closeModal">×</button></div><div class="owner-list">${owners.length?owners.map(o=>`<button class="owner-choice" data-owner="${attr(o)}">${esc(o)}</button>`).join(""):`<div class="empty">No owners yet.</div>`}</div></div>`,()=>{document.getElementById("closeModal").onclick=closeModal;modalRoot.querySelectorAll("[data-owner]").forEach(b=>b.onclick=()=>{view.ownerFilter=b.dataset.owner;closeModal();render()})})}
+
+
+function showAddMenu(){
+  openModal(`<section class="modal-card add-menu-modal">
+    <p class="eyebrow">Add to herd</p>
+    <h2>What would you like to add?</h2>
+
+    <div class="add-choice-grid">
+      <button type="button" class="add-choice" id="chooseAddCow">
+        <span class="add-choice-icon">＋</span>
+        <span>
+          <strong>Add cow</strong>
+          <small>Add one cow to the herd</small>
+        </span>
+      </button>
+
+      <button type="button" class="add-choice" id="chooseAddCalves">
+        <span class="add-choice-icon">＋</span>
+        <span>
+          <strong>Add calves</strong>
+          <small>Add calves to several cows at once</small>
+        </span>
+      </button>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="soft" id="closeAddMenu">Cancel</button>
+    </div>
+  </section>`,()=>{
+    document.getElementById("closeAddMenu").onclick=closeModal;
+    document.getElementById("chooseAddCow").onclick=()=>{
+      closeModal();
+      showAddCowModal();
+    };
+    document.getElementById("chooseAddCalves").onclick=()=>{
+      closeModal();
+      showBatchCalvesModal();
+    };
+  });
+}
 
 function showBatchCalvesModal(){
   const now=new Date();
