@@ -19,31 +19,6 @@
 .herd-score-note{margin:12px 3px 0;color:var(--muted);font-size:.76rem;line-height:1.4}
 
 
-/* V6: obvious herd scorecard entry on cattle page */
-.herd-scorecard-entry{
-  width:100%;
-  margin:10px 0 14px;
-  min-height:62px;
-  padding:11px 14px;
-  background:var(--accent-soft);
-  color:var(--accent);
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  text-align:left;
-}
-.herd-scorecard-entry strong{
-  display:block;
-  font-size:.98rem;
-}
-.herd-scorecard-entry small{
-  display:block;
-  margin-top:2px;
-  color:var(--muted);
-  font-size:.72rem;
-  font-weight:650;
-}
-
 /* V6: never-calved list */
 .never-calved-btn{
   width:100%;
@@ -161,4 +136,67 @@ body.cow-layout #app{
   .cow-fixed-head .brand-number{font-size:2rem}
   .cow-fixed-head .inline-field{grid-template-columns:1fr;gap:5px}
   .cow-calves-heading h2{font-size:1.05rem}
+}
+
+
+/* V8 cattle header: Scorecard sits beside + Cow again. */
+.cattle-header-actions{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  flex:0 0 auto;
+}
+.cattle-header-actions .small{
+  min-height:40px;
+  padding:8px 11px;
+  white-space:nowrap;
+}
+
+/* V8 calf cards: every line must stay inside its own card. */
+.cow-calves-scroll{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:stretch;
+}
+.cow-calves-scroll .calf-card{
+  flex:0 0 auto;
+  display:block;
+  width:100%;
+  min-height:78px;
+  height:auto;
+  overflow:hidden;
+  padding:12px 14px;
+  line-height:1.2;
+}
+.cow-calves-scroll .calf-top{
+  min-height:26px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.cow-calves-scroll .calf-date{
+  display:block;
+  min-width:0;
+  font-size:1rem;
+  line-height:1.25;
+}
+.cow-calves-scroll .calf-meta{
+  display:block;
+  margin-top:7px;
+  min-height:20px;
+  font-size:.84rem;
+  line-height:1.3;
+  color:var(--muted);
+  overflow-wrap:anywhere;
+}
+.cow-calves-scroll .dead-badge{
+  flex:0 0 auto;
+}
+
+@media(max-width:420px){
+  .cattle-header-actions{gap:5px}
+  .cattle-header-actions .small{padding-inline:9px;font-size:.82rem}
+  .cow-calves-scroll .calf-card{min-height:76px;padding:11px 13px}
 }

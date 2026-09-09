@@ -57,7 +57,10 @@ function renderCattle(){
         <button class="icon-button" id="backHome">←</button>
         <h1 class="page-title">Cattle</h1>
       </div>
-      <button class="primary small" id="addCowBtn">+ Cow</button>
+      <div class="cattle-header-actions">
+        <button class="soft small" id="herdScoreBtn">Scorecard</button>
+        <button class="primary small" id="addCowBtn">+ Cow</button>
+      </div>
     </header>
 
     <section class="cattle-tools">
@@ -67,14 +70,6 @@ function renderCattle(){
       </div>
       <button class="soft" id="ownersBtn">Owners</button>
     </section>
-
-    <button class="herd-scorecard-entry" id="herdScoreBtn">
-      <span>
-        <strong>Herd Scorecard</strong>
-        <small>Overall calving performance</small>
-      </span>
-      <span class="chevron">›</span>
-    </button>
 
     ${view.ownerFilter?`<div class="filter-bar"><span>Owner: ${esc(view.ownerFilter)}</span><button class="link-btn" id="clearOwner">Clear</button></div>`:""}
 
