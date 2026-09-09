@@ -507,3 +507,57 @@ body{
   place-items:center;
   backdrop-filter:blur(10px);
 }
+
+/* V12 — warm earth background and Cattle Records branding */
+:root{
+  --earth-bg:#e4d6c2;
+  --earth-card:#fffaf2;
+  --earth-ink:#26372b;
+  --earth-green:#315b43;
+  --earth-gold:#a8783f;
+}
+body{
+  background:
+    radial-gradient(circle at 12% 4%,rgba(255,250,239,.62),transparent 30%),
+    radial-gradient(circle at 88% 12%,rgba(168,120,63,.11),transparent 28%),
+    linear-gradient(180deg,#eadfce 0%,#e4d6c2 50%,#deceb8 100%);
+  background-attachment:fixed;
+  color:var(--earth-ink);
+}
+.screen,.cow-page-fixed,.chat-screen{background:transparent}
+.home-card,.cow-head,.calf-card,.modal-card{
+  background:rgba(255,250,242,.95);
+  border-color:rgba(91,75,55,.18);
+  box-shadow:0 10px 26px rgba(86,67,42,.08);
+}
+.cattle-number{
+  background:linear-gradient(180deg,#fffaf2,#f7eee1);
+  border-color:rgba(91,75,55,.18);
+}
+.cattle-number.dead{background:linear-gradient(180deg,#fff5f1,#f2dfd8)}
+.search-wrap,input,select,textarea{border-color:rgba(91,75,55,.20)}
+.primary{background:var(--earth-green)}
+.soft,.cattle-header-actions .soft{background:#dce6da;color:var(--earth-green)}
+.chat-preview-card{background:linear-gradient(135deg,#e0eadf,#e9dfcf)}
+.scorecard-link,.never-calved-btn{background:linear-gradient(135deg,#dfe8dc,#ebe1d1)}
+
+.home-branding{min-width:0}
+.app-brand{
+  margin:0 0 8px;
+  color:var(--earth-green);
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:1.18rem;
+  line-height:1;
+  font-weight:900;
+  letter-spacing:.055em;
+  text-transform:uppercase;
+  font-style:italic;
+  text-shadow:0 1px 0 rgba(255,255,255,.65);
+}
+.farm-name{
+  margin:0;
+  color:var(--earth-ink);
+}
+@media(max-width:420px){
+  .app-brand{font-size:1.06rem;letter-spacing:.045em}
+}
