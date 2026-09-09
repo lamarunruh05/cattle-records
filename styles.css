@@ -603,3 +603,52 @@ body,#app{min-height:100vh;min-height:100dvh}
   .ranch-mark{width:min(300px,78vw)}
   .ranch-mark svg{max-height:92px}
 }
+
+
+/* V14 — refined ranch mark, vertically centered in lower open space */
+.home-screen{
+  display:flex;
+  flex-direction:column;
+}
+.ranch-footer{
+  flex:1 1 auto;
+  min-height:250px;
+  margin-top:18px;
+  padding:28px 18px max(18px,env(safe-area-inset-bottom));
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.ranch-mark{
+  width:min(390px,84vw);
+  transform:translateY(34px);
+}
+.ranch-mark svg{
+  max-height:145px;
+}
+.ranch-mark .cow-shape,
+.ranch-mark .calf-shape{
+  fill:#52745f;
+  stroke:#52745f;
+  stroke-width:2;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.ranch-mark .eye{
+  fill:#e8dcc9;
+  stroke:none;
+}
+@media(max-width:420px){
+  .ranch-footer{
+    min-height:280px;
+    margin-top:10px;
+    padding-top:22px;
+  }
+  .ranch-mark{
+    width:min(340px,82vw);
+    transform:translateY(42px);
+  }
+  .ranch-mark svg{
+    max-height:128px;
+  }
+}
