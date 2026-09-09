@@ -858,3 +858,39 @@ body,#app{min-height:100vh;min-height:100dvh}
     font-size:1.05rem;
   }
 }
+
+
+/* V16 — compact scenic footer */
+.scene-motto{display:none!important}
+
+.home-ranch-scene{
+  min-height:300px;
+  flex:0 0 300px;
+  margin-top:0;
+  background-size:cover;
+  /* Pull the lower ranch/cattle portion upward into the visible dashboard. */
+  background-position:center 84%;
+}
+
+.home-ranch-scene::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  /* Blend the dashboard naturally into the photograph. */
+  background:linear-gradient(
+    180deg,
+    rgba(222,187,137,.96) 0%,
+    rgba(222,187,137,.60) 13%,
+    rgba(222,187,137,.16) 31%,
+    transparent 48%
+  );
+}
+
+@media(max-width:420px){
+  .home-ranch-scene{
+    min-height:285px;
+    flex-basis:285px;
+    background-position:center 86%;
+  }
+}
