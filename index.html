@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f6f4ef" />
+  <title>Cattle Records</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <template id="login-template">
+    <main class="screen auth-screen">
+      <section class="auth-card">
+        <p class="eyebrow">Cattle Records</p>
+        <h1>Farm login</h1>
+        <p class="muted">Enter your username to open the shared farm records.</p>
+        <form id="loginForm" class="stack">
+          <label>
+            <span>Username</span>
+            <input id="usernameInput" autocomplete="username" maxlength="40" required placeholder="Your name" />
+          </label>
+          <button class="primary" type="submit">Continue</button>
+        </form>
+      </section>
+    </main>
+  </template>
+
+  <template id="home-template">
+    <main class="screen">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Farm</p>
+          <h1 id="farmName">Cattle Records</h1>
+        </div>
+        <button class="icon-button" id="menuBtn" aria-label="Open menu">☰</button>
+      </header>
+
+      <section class="toolbar">
+        <button class="soft" id="ownersBtn">Owners</button>
+        <button class="soft" id="allCowsBtn">All cows</button>
+        <button class="primary small" id="addCowBtn">+ Cow</button>
+      </section>
+
+      <section id="ownerFilterBar" class="filter-bar hidden">
+        <span id="ownerFilterText"></span>
+        <button class="link-btn" id="clearOwnerBtn">Clear</button>
+      </section>
+
+      <section class="cow-list" id="cowList"></section>
+
+      <section class="notes-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Farm notes</p>
+            <h2>Shared board</h2>
+          </div>
+        </div>
+
+        <div id="notesList" class="notes-list"></div>
+
+        <form id="noteForm" class="note-composer">
+          <textarea id="noteText" rows="2" maxlength="500" placeholder="Add a note..."></textarea>
+          <div class="composer-row">
+            <label class="photo-button">
+              <input id="notePhoto" type="file" accept="image/*" />
+              <span>📷 Photo</span>
+            </label>
+            <button class="primary small" type="submit">Send</button>
+          </div>
+          <div id="photoPreviewWrap" class="photo-preview-wrap hidden">
+            <img id="photoPreview" alt="Selected note photo preview" />
+            <button type="button" class="link-btn" id="removePhotoBtn">Remove photo</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </template>
+
+  <template id="cow-template">
+    <main class="screen">
+      <header class="topbar">
+        <button class="icon-button" id="backBtn" aria-label="Back">←</button>
+        <button class="icon-button" id="cowMenuBtn" aria-label="Cow options">•••</button>
+      </header>
+
+      <section class="cow-hero">
+        <p class="eyebrow">Brand number</p>
+        <h1 id="cowBrand"></h1>
+        <label class="inline-field">
+          <span>Owner</span>
+          <input id="ownerInput" placeholder="Optional" maxlength="80" />
+        </label>
+      </section>
+
+      <section class="performance-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Performance</p>
+            <h2>Scorecard</h2>
+          </div>
+        </div>
+        <div id="performanceGrid" class="stats-grid"></div>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">History</p>
+            <h2>Calves</h2>
+          </div>
+          <button class="primary small" id="addCalfBtn">+ Calf</button>
+        </div>
+        <div id="calfList" class="calf-list"></div>
+      </section>
+    </main>
+  </template>
+
+  <div id="modalRoot"></div>
+  <script src="app.js"></script>
+</body>
+</html>
