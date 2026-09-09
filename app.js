@@ -71,6 +71,14 @@ function renderCattle(){
       <button class="soft" id="ownersBtn">Owners</button>
     </section>
 
+    <button class="batch-calves-entry" id="batchCalvesBtn">
+      <span>
+        <strong>+ Add calves</strong>
+        <small>Add the same birth date to several cows</small>
+      </span>
+      <span>›</span>
+    </button>
+
     ${view.ownerFilter?`<div class="filter-bar"><span>Owner: ${esc(view.ownerFilter)}</span><button class="link-btn" id="clearOwner">Clear</button></div>`:""}
 
     <div class="cattle-count">${cows.length} ${cows.length===1?"cow":"cows"}</div>
@@ -90,6 +98,7 @@ function renderCattle(){
   document.getElementById("addCowBtn").onclick=showAddCowModal;
   document.getElementById("herdScoreBtn").onclick=()=>{view.page="herdScorecard";render()};
   document.getElementById("ownersBtn").onclick=showOwnersModal;
+  document.getElementById("batchCalvesBtn").onclick=showBatchCalvesModal;
 
   if(view.ownerFilter){
     document.getElementById("clearOwner").onclick=()=>{view.ownerFilter="";render()};
@@ -343,6 +352,187 @@ function setupChatComposer(){const input=document.getElementById("chatPhoto"),wr
 function openModal(html,onReady){modalRoot.innerHTML=`<div class="modal-backdrop"><section class="modal">${html}</section></div>`;const b=modalRoot.querySelector(".modal-backdrop");b.onclick=e=>{if(e.target===b)closeModal()};onReady?.()}
 function closeModal(){modalRoot.innerHTML=""}
 function showOwnersModal(){const owners=[...new Set(state.cows.map(c=>c.owner).filter(Boolean))].sort((a,b)=>a.localeCompare(b));openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Filter cattle</p><h2>Owners</h2></div><button class="icon-button" id="closeModal">×</button></div><div class="owner-list">${owners.length?owners.map(o=>`<button class="owner-choice" data-owner="${attr(o)}">${esc(o)}</button>`).join(""):`<div class="empty">No owners yet.</div>`}</div></div>`,()=>{document.getElementById("closeModal").onclick=closeModal;modalRoot.querySelectorAll("[data-owner]").forEach(b=>b.onclick=()=>{view.ownerFilter=b.dataset.owner;closeModal();render()})})}
+
+function showBatchCalvesModal(){
+  const now=new Date();
+  const batch={
+    month:now.getMonth()+1,
+    year:currentYear(),
+    brands:[],
+    details:{}
+  };
+
+  const parseBrands=text=>{
+    const raw=text.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+    return [...new Set(raw)];
+  };
+
+  const getCowByBrand=brand=>state.cows.find(c=>String(c.brand).trim()===String(brand).trim());
+
+  const renderRows=brands=>{
+    const valid=brands.map(brand=>({brand,cow:getCowByBrand(brand)}));
+    const wrap=document.getElementById("batchCowRows");
+    if(!wrap)return;
+
+    wrap.innerHTML=valid.length?valid.map(({brand,cow})=>{
+      if(!cow){
+        return `<div class="batch-cow-row invalid">
+          <div class="batch-cow-main">
+            <strong>${esc(brand)}</strong>
+            <span>Not found</span>
+          </div>
+        </div>`;
+      }
+
+      const d=batch.details[cow.id]||{gender:"",color:"",dead:false,notes:"",open:false};
+      batch.details[cow.id]=d;
+
+      return `<div class="batch-cow-row" data-batch-cow="${cow.id}">
+        <div class="batch-cow-main">
+          <div>
+            <strong>Cow ${esc(cow.brand)}</strong>
+            <span>${esc(cow.owner||"No owner")}</span>
+          </div>
+          <button type="button" class="link-btn batch-info-toggle" data-toggle="${cow.id}">
+            ${d.open?"Hide information":"Add information"}
+          </button>
+        </div>
+
+        <div class="batch-cow-details ${d.open?"":"hidden"}" data-details="${cow.id}">
+          <label>
+            <span>Gender</span>
+            <select data-field="gender" data-id="${cow.id}">
+              <option value="">Optional</option>
+              <option value="Heifer" ${d.gender==="Heifer"?"selected":""}>Heifer</option>
+              <option value="Bull" ${d.gender==="Bull"?"selected":""}>Bull</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Color</span>
+            <input data-field="color" data-id="${cow.id}" maxlength="60" value="${attr(d.color||"")}" placeholder="Optional">
+          </label>
+
+          <label class="checkbox-row">
+            <input type="checkbox" data-field="dead" data-id="${cow.id}" ${d.dead?"checked":""}>
+            <span>Dead calf</span>
+          </label>
+
+          <label>
+            <span>Notes</span>
+            <textarea data-field="notes" data-id="${cow.id}" rows="3" maxlength="1000" placeholder="Optional">${esc(d.notes||"")}</textarea>
+          </label>
+        </div>
+      </div>`;
+    }).join(""):`<div class="empty">Enter cow brand numbers above.</div>`;
+
+    wrap.querySelectorAll("[data-toggle]").forEach(btn=>{
+      btn.onclick=()=>{
+        const id=btn.dataset.toggle;
+        batch.details[id].open=!batch.details[id].open;
+        renderRows(batch.brands);
+      };
+    });
+
+    wrap.querySelectorAll("[data-field]").forEach(el=>{
+      const id=el.dataset.id;
+      const field=el.dataset.field;
+      const save=()=>{
+        batch.details[id][field]=field==="dead"?el.checked:el.value;
+      };
+      el.addEventListener(field==="dead"?"change":"input",save);
+      if(el.tagName==="SELECT")el.addEventListener("change",save);
+    });
+  };
+
+  openModal(`<form class="modal-card batch-calves-modal" id="batchCalvesForm">
+    <p class="eyebrow">Batch entry</p>
+    <h2>Add calves</h2>
+    <p class="muted">Use one birth date for all of these calves, then optionally add details for each cow.</p>
+
+    <div class="batch-date-row">
+      <label>
+        <span>Month</span>
+        <select id="batchMonth">
+          ${Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${m}" ${m===batch.month?"selected":""}>${fullMonthName(m)}</option>`).join("")}
+        </select>
+      </label>
+      <label>
+        <span>Year</span>
+        <input id="batchYear" type="number" min="1900" max="2200" value="${batch.year}" required>
+      </label>
+    </div>
+
+    <label>
+      <span>Cow brand numbers</span>
+      <textarea id="batchBrands" rows="4" placeholder="Example: 12, 32, 55, 96"></textarea>
+      <small class="field-help">Separate numbers with spaces, commas, or new lines.</small>
+    </label>
+
+    <div class="batch-cow-list" id="batchCowRows">
+      <div class="empty">Enter cow brand numbers above.</div>
+    </div>
+
+    <div class="modal-actions batch-actions">
+      <button type="button" class="soft" id="cancelBatchCalves">Cancel</button>
+      <button type="submit" class="primary" id="saveBatchCalves">Save calves</button>
+    </div>
+  </form>`,()=>{
+    const brandsInput=document.getElementById("batchBrands");
+    const monthInput=document.getElementById("batchMonth");
+    const yearInput=document.getElementById("batchYear");
+
+    document.getElementById("cancelBatchCalves").onclick=closeModal;
+
+    const syncBrands=()=>{
+      batch.brands=parseBrands(brandsInput.value);
+      renderRows(batch.brands);
+    };
+    brandsInput.addEventListener("input",syncBrands);
+
+    monthInput.addEventListener("change",()=>batch.month=Number(monthInput.value));
+    yearInput.addEventListener("input",()=>batch.year=Number(yearInput.value));
+
+    document.getElementById("batchCalvesForm").onsubmit=e=>{
+      e.preventDefault();
+      batch.month=Number(monthInput.value);
+      batch.year=Number(yearInput.value);
+      batch.brands=parseBrands(brandsInput.value);
+
+      const cows=batch.brands.map(getCowByBrand).filter(Boolean);
+      const unknown=batch.brands.filter(b=>!getCowByBrand(b));
+
+      if(!batch.brands.length){
+        alert("Enter at least one cow brand number.");
+        return;
+      }
+      if(unknown.length){
+        alert("These cow numbers were not found: "+unknown.join(", "));
+        return;
+      }
+      if(!cows.length)return;
+
+      cows.forEach(cow=>{
+        const d=batch.details[cow.id]||{};
+        cow.calves.push({
+          id:uid(),
+          month:batch.month,
+          year:batch.year,
+          gender:d.gender||"",
+          color:(d.color||"").trim(),
+          dead:!!d.dead,
+          notes:(d.notes||"").trim()
+        });
+      });
+
+      saveState();
+      closeModal();
+      render();
+    };
+
+    renderRows([]);
+  });
+}
 function showAddCowModal(){openModal(`<form class="modal-card" id="addCowForm"><p class="eyebrow">New cow</p><h2>Add brand number</h2><div class="stack"><label><span>Brand number</span><input id="newBrand" required maxlength="30" inputmode="numeric"></label><label><span>Owner</span><input id="newOwner" maxlength="80" placeholder="Optional"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelCow">Cancel</button><button type="submit" class="primary">Add cow</button></div></form>`,()=>{document.getElementById("cancelCow").onclick=closeModal;document.getElementById("addCowForm").onsubmit=e=>{e.preventDefault();const brand=document.getElementById("newBrand").value.trim(),owner=document.getElementById("newOwner").value.trim();if(!brand)return;if(state.cows.some(c=>c.brand.toLowerCase()===brand.toLowerCase())){alert("That brand number already exists.");return}state.cows.push({id:uid(),brand,owner,calves:[]});saveState();closeModal();render()}})}
 function showCalfModal(cow,calf){
   const editing=!!calf;
