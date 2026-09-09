@@ -312,7 +312,7 @@ function renderChat(){
         <article class="message-bubble">
           <div class="message-meta">${esc(n.user)} · ${formatDateTime(n.timestamp)}</div>
           ${n.text?`<div class="message-text">${esc(n.text)}</div>`:""}
-          ${n.photo?`<img src="${n.photo}" alt="Farm chat photo">`:""}
+          ${n.photo?`<button class="chat-photo-button" type="button" data-chat-photo="${attr(n.photo)}"><img src="${n.photo}" alt="Farm chat photo"></button>`:""}
         </article>
       </div>`).join(""):`<div class="empty">No messages yet.</div>`}
     </section>
@@ -336,9 +336,97 @@ function renderChat(){
   </main>`);
   document.getElementById("backHome").onclick=()=>{view.page="home";render()};
   setupChatComposer();
+  document.querySelectorAll("[data-chat-photo]").forEach(btn=>{
+    btn.onclick=()=>openPhotoViewer(btn.dataset.chatPhoto);
+  });
   const list=document.getElementById("chatList");
   if(list) list.scrollTop=list.scrollHeight;
 }
+
+function openPhotoViewer(src){
+  const viewer=document.createElement("div");
+  viewer.className="photo-viewer";
+  viewer.innerHTML=`
+    <button type="button" class="photo-viewer-close" aria-label="Close">×</button>
+    <div class="photo-viewer-stage">
+      <img class="photo-viewer-image" src="${attr(src)}" alt="Chat photo">
+    </div>
+  `;
+  document.body.appendChild(viewer);
+
+  const stage=viewer.querySelector(".photo-viewer-stage");
+  const img=viewer.querySelector(".photo-viewer-image");
+  const close=()=>viewer.remove();
+
+  viewer.querySelector(".photo-viewer-close").onclick=close;
+  viewer.addEventListener("click",e=>{
+    if(e.target===viewer||e.target===stage)close();
+  });
+
+  let scale=1,startDist=0,startScale=1;
+  let x=0,y=0,startX=0,startY=0,dragging=false;
+  let lastTap=0;
+
+  const apply=()=>{
+    img.style.transform=`translate(${x}px,${y}px) scale(${scale})`;
+  };
+
+  const clampScale=v=>Math.max(1,Math.min(4,v));
+
+  const distance=touches=>{
+    const [a,b]=touches;
+    return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+  };
+
+  stage.addEventListener("touchstart",e=>{
+    if(e.touches.length===2){
+      startDist=distance(e.touches);
+      startScale=scale;
+      dragging=false;
+    }else if(e.touches.length===1 && scale>1){
+      dragging=true;
+      startX=e.touches[0].clientX-x;
+      startY=e.touches[0].clientY-y;
+    }
+  },{passive:false});
+
+  stage.addEventListener("touchmove",e=>{
+    if(e.touches.length===2){
+      e.preventDefault();
+      const d=distance(e.touches);
+      scale=clampScale(startScale*(d/startDist));
+      if(scale===1){x=0;y=0}
+      apply();
+    }else if(e.touches.length===1 && dragging && scale>1){
+      e.preventDefault();
+      x=e.touches[0].clientX-startX;
+      y=e.touches[0].clientY-startY;
+      apply();
+    }
+  },{passive:false});
+
+  stage.addEventListener("touchend",e=>{
+    if(e.touches.length===0)dragging=false;
+  });
+
+  stage.addEventListener("dblclick",()=>{
+    if(scale>1){scale=1;x=0;y=0}
+    else scale=2;
+    apply();
+  });
+
+  img.addEventListener("click",e=>{
+    const now=Date.now();
+    if(now-lastTap<300){
+      if(scale>1){scale=1;x=0;y=0}
+      else scale=2;
+      apply();
+    }
+    lastTap=now;
+    e.stopPropagation();
+  });
+}
+
 function setupChatComposer(){const input=document.getElementById("chatPhoto"),wrap=document.getElementById("photoPreviewWrap"),img=document.getElementById("photoPreview");input.onchange=()=>{const f=input.files?.[0];if(!f)return;if(f.size>4*1024*1024){alert("For this prototype, choose an image under 4 MB.");input.value="";return}const r=new FileReader();r.onload=()=>{pendingPhoto=String(r.result);img.src=pendingPhoto;wrap.classList.remove("hidden")};r.readAsDataURL(f)};document.getElementById("removePhoto").onclick=()=>{pendingPhoto=null;input.value="";img.removeAttribute("src");wrap.classList.add("hidden")};document.getElementById("chatForm").onsubmit=e=>{e.preventDefault();const text=document.getElementById("chatText").value.trim();if(!text&&!pendingPhoto)return;state.notes.push({id:uid(),user:state.currentUser,timestamp:new Date().toISOString(),text,photo:pendingPhoto});pendingPhoto=null;saveState();render()}}
 function openModal(html,onReady){modalRoot.innerHTML=`<div class="modal-backdrop"><section class="modal">${html}</section></div>`;const b=modalRoot.querySelector(".modal-backdrop");b.onclick=e=>{if(e.target===b)closeModal()};onReady?.()}
 function closeModal(){modalRoot.innerHTML=""}
