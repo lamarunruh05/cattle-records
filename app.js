@@ -38,18 +38,89 @@ function usePage(html){app.innerHTML=html;modalRoot.innerHTML=""}
 function render(){if(view.page==="login")return renderLogin();if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();return renderHome()}
 function renderLogin(){usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Enter your username to open the shared farm records.</p><form id="loginForm" class="stack"><label><span>Username</span><input id="usernameInput" maxlength="40" required placeholder="Your name"></label><button class="primary" type="submit">Continue</button></form></section></main>`);document.getElementById("loginForm").addEventListener("submit",e=>{e.preventDefault();const u=document.getElementById("usernameInput").value.trim();if(!u)return;state.currentUser=u;saveState();view.page="home";render()})}
 function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null,calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length,dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;usePage(`<main class="screen"><header class="topbar"><div><p class="eyebrow">Farm</p><h1>${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section></main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render()};document.getElementById("openChat").onclick=()=>{view.page="chat";render()};document.getElementById("menuBtn").onclick=showFarmMenu}
-function renderCattle(){let cows=sortedCows(state.cows);if(view.ownerFilter)cows=cows.filter(c=>c.owner===view.ownerFilter);if(view.search){const q=view.search.trim().toLowerCase();cows=cows.filter(c=>c.brand.toLowerCase().includes(q))}usePage(`<main class="screen"><header class="topbar"><div class="back-title"><button class="icon-button" id="backHome">←</button><h1 class="page-title">Cattle</h1></div><div class="cattle-header-actions"><button class="soft small" id="herdScoreBtn">Scorecard</button><button class="primary small" id="addCowBtn">+ Cow</button></div></header><section class="cattle-tools"><div class="search-wrap"><span class="search-icon">⌕</span><input id="cowSearch" inputmode="numeric" placeholder="Search brand number" value="${attr(view.search)}"></div><button class="soft" id="ownersBtn">Owners</button></section>${view.ownerFilter?`<div class="filter-bar"><span>Owner: ${esc(view.ownerFilter)}</span><button class="link-btn" id="clearOwner">Clear</button></div>`:""}<div class="cattle-count">${cows.length} ${cows.length===1?"cow":"cows"}</div><section class="cattle-grid">${cows.length?cows.map(c=>{const latest=latestCurrentYearCalf(c);return `<button class="cattle-number ${latest&&latest.dead?"dead":""}" data-cow="${c.id}"><span class="cattle-brand">${esc(c.brand)}</span><span class="cattle-calving">${latest?`${monthName(latest.month)} ${latest.year}`:"Hasn't calved yet"}</span></button>`}).join(""):`<div class="empty" style="grid-column:1/-1">No cows found.</div>`}</section></main>`);document.getElementById("backHome").onclick=()=>{view.page="home";render()};document.getElementById("addCowBtn").onclick=showAddCowModal;document.getElementById("herdScoreBtn").onclick=()=>{view.page="herdScorecard";render()};document.getElementById("ownersBtn").onclick=showOwnersModal;if(view.ownerFilter)document.getElementById("clearOwner").onclick=()=>{view.ownerFilter="";render()};document.getElementById("cowSearch").addEventListener("input",e=>{view.search=e.target.value;renderCattle();const i=document.getElementById("cowSearch");i.focus();i.setSelectionRange(i.value.length,i.value.length)});document.querySelectorAll("[data-cow]").forEach(b=>b.onclick=()=>{view.cowId=b.dataset.cow;view.page="cow";render()})}
+function renderCattle(){
+  let cows=sortedCows(state.cows);
+  if(view.ownerFilter)cows=cows.filter(c=>c.owner===view.ownerFilter);
+  if(view.search){
+    const q=view.search.trim().toLowerCase();
+    cows=cows.filter(c=>c.brand.toLowerCase().includes(q));
+  }
+
+  usePage(`<main class="screen">
+    <header class="topbar">
+      <div class="back-title">
+        <button class="icon-button" id="backHome">←</button>
+        <h1 class="page-title">Cattle</h1>
+      </div>
+      <button class="primary small" id="addCowBtn">+ Cow</button>
+    </header>
+
+    <section class="cattle-tools">
+      <div class="search-wrap">
+        <span class="search-icon">⌕</span>
+        <input id="cowSearch" inputmode="numeric" placeholder="Search brand number" value="${attr(view.search)}">
+      </div>
+      <button class="soft" id="ownersBtn">Owners</button>
+    </section>
+
+    <button class="herd-scorecard-entry" id="herdScoreBtn">
+      <span>
+        <strong>Herd Scorecard</strong>
+        <small>Overall calving performance</small>
+      </span>
+      <span class="chevron">›</span>
+    </button>
+
+    ${view.ownerFilter?`<div class="filter-bar"><span>Owner: ${esc(view.ownerFilter)}</span><button class="link-btn" id="clearOwner">Clear</button></div>`:""}
+
+    <div class="cattle-count">${cows.length} ${cows.length===1?"cow":"cows"}</div>
+
+    <section class="cattle-grid">
+      ${cows.length?cows.map(c=>{
+        const latest=latestCurrentYearCalf(c);
+        return `<button class="cattle-number ${latest&&latest.dead?"dead":""}" data-cow="${c.id}">
+          <span class="cattle-brand">${esc(c.brand)}</span>
+          <span class="cattle-calving">${latest?`${monthName(latest.month)} ${latest.year}`:"Hasn't calved yet"}</span>
+        </button>`;
+      }).join(""):`<div class="empty" style="grid-column:1/-1">No cows found.</div>`}
+    </section>
+  </main>`);
+
+  document.getElementById("backHome").onclick=()=>{view.page="home";render()};
+  document.getElementById("addCowBtn").onclick=showAddCowModal;
+  document.getElementById("herdScoreBtn").onclick=()=>{view.page="herdScorecard";render()};
+  document.getElementById("ownersBtn").onclick=showOwnersModal;
+
+  if(view.ownerFilter){
+    document.getElementById("clearOwner").onclick=()=>{view.ownerFilter="";render()};
+  }
+
+  document.getElementById("cowSearch").addEventListener("input",e=>{
+    view.search=e.target.value;
+    renderCattle();
+    const i=document.getElementById("cowSearch");
+    i.focus();
+    i.setSelectionRange(i.value.length,i.value.length);
+  });
+
+  document.querySelectorAll("[data-cow]").forEach(b=>b.onclick=()=>{
+    view.cowId=b.dataset.cow;
+    view.page="cow";
+    render();
+  });
+}
 function renderCow(){
   const cow=state.cows.find(c=>c.id===view.cowId);
   if(!cow){view.page="cattle";return render()}
   const calves=sortedCalves(cow);
-  usePage(`<main class="screen cow-screen">
-    <header class="topbar cow-topbar">
+
+  usePage(`<main class="cow-page-fixed">
+    <header class="cow-fixed-top">
       <button class="icon-button" id="backCattle">←</button>
       <button class="icon-button" id="cowMenuBtn">•••</button>
     </header>
 
-    <section class="cow-head">
+    <section class="cow-head cow-fixed-head">
       <div class="cow-head-row">
         <div>
           <p class="eyebrow">Brand number</p>
@@ -62,8 +133,8 @@ function renderCow(){
       </label>
     </section>
 
-    <section class="cow-history">
-      <div class="section-heading cow-history-heading">
+    <section class="cow-calves-panel">
+      <div class="section-heading cow-calves-heading">
         <div>
           <p class="eyebrow">History</p>
           <h2>Calves</h2>
@@ -71,7 +142,7 @@ function renderCow(){
         <button class="primary small" id="addCalfBtn">+ Calf</button>
       </div>
 
-      <div class="calf-list cow-calf-scroll">
+      <div class="cow-calves-scroll">
         ${calves.length?calves.map(c=>{
           const meta=[c.gender,c.color].filter(Boolean).join(" · ");
           return `<button class="calf-card" data-calf="${c.id}">
@@ -84,8 +155,9 @@ function renderCow(){
         }).join(""):`<div class="empty">No calf records yet.</div>`}
       </div>
 
-      <button class="scorecard-link cow-scorecard-fixed" id="scorecardBtn">
-        <span>View performance scorecard</span><span>›</span>
+      <button class="scorecard-link cow-fixed-scorecard" id="scorecardBtn">
+        <span>View performance scorecard</span>
+        <span>›</span>
       </button>
     </section>
   </main>`);
@@ -95,6 +167,7 @@ function renderCow(){
   document.getElementById("addCalfBtn").onclick=()=>showCalfModal(cow,null);
   document.getElementById("scorecardBtn").onclick=()=>{view.page="scorecard";render()};
   document.getElementById("cowMenuBtn").onclick=()=>showCowMenu(cow);
+
   document.querySelectorAll("[data-calf]").forEach(b=>{
     const calf=cow.calves.find(c=>c.id===b.dataset.calf);
     b.onclick=()=>showCalfModal(cow,calf);
@@ -135,8 +208,12 @@ function renderHerdScorecard(){
       <tbody>${rows.map(r=>`<tr><td>${r.year}</td><td>${r.eligible}</td><td>${r.calved}</td><td>${pct(r.calvingRate)}</td><td class="status-live">${r.live}</td><td class="${r.dead?"status-dead":""}">${r.dead}</td><td>${pct(r.deadRate)}</td></tr>`).join("")}</tbody>
     </table></div>
     <p class="herd-score-note">A cow starts counting in the year of her first recorded calf and remains eligible in each following year.</p>
+
     <button class="never-calved-btn" id="neverCalvedBtn">
-      <span><strong>${state.cows.filter(c=>!c.calves||c.calves.length===0).length}</strong> cows have never calved</span>
+      <span>
+        <strong>${state.cows.filter(c=>!c.calves||c.calves.length===0).length}</strong>
+        cows have never calved
+      </span>
       <span>View cows ›</span>
     </button>
   </main>`);
@@ -363,9 +440,14 @@ function showNeverCalvedModal(){
     <p class="eyebrow">Herd Scorecard</p>
     <h2>Never calved</h2>
     <p class="muted">${cows.length} ${cows.length===1?"cow has":"cows have"} no calf records yet.</p>
+
     <div class="never-calved-grid">
-      ${cows.length?cows.map(c=>`<button class="never-calved-cow" data-never-cow="${c.id}">${esc(c.brand)}</button>`).join(""):`<div class="empty" style="grid-column:1/-1">Every cow has at least one calf record.</div>`}
+      ${cows.length?cows.map(c=>`
+        <button class="never-calved-cow" data-never-cow="${c.id}">
+          ${esc(c.brand)}
+        </button>`).join(""):`<div class="empty" style="grid-column:1/-1">Every cow has at least one calf record.</div>`}
     </div>
+
     <div class="modal-actions">
       <button type="button" class="soft" id="closeNeverCalved">Close</button>
     </div>

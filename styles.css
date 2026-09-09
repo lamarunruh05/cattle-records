@@ -19,79 +19,138 @@
 .herd-score-note{margin:12px 3px 0;color:var(--muted);font-size:.76rem;line-height:1.4}
 
 
-/* V5 cow history layout: only the calf history scrolls. */
-.cow-screen{
-  height:100dvh;
+/* V6: obvious herd scorecard entry on cattle page */
+.herd-scorecard-entry{
+  width:100%;
+  margin:10px 0 14px;
+  min-height:62px;
+  padding:11px 14px;
+  background:var(--accent-soft);
+  color:var(--accent);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  text-align:left;
+}
+.herd-scorecard-entry strong{
+  display:block;
+  font-size:.98rem;
+}
+.herd-scorecard-entry small{
+  display:block;
+  margin-top:2px;
+  color:var(--muted);
+  font-size:.72rem;
+  font-weight:650;
+}
+
+/* V6: cow page is physically pinned to the browser viewport. */
+.cow-page-fixed{
+  position:fixed;
+  inset:0;
+  width:min(760px,100%);
+  margin:0 auto;
+  padding:16px 14px calc(10px + env(safe-area-inset-bottom));
+  background:var(--bg);
   display:flex;
   flex-direction:column;
   overflow:hidden;
-  padding-bottom:calc(12px + env(safe-area-inset-bottom));
 }
-.cow-topbar{flex:0 0 auto;margin-bottom:14px}
-.cow-screen .cow-head{flex:0 0 auto;margin-bottom:14px}
-.cow-history{
+.cow-fixed-top{
+  flex:0 0 auto;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:12px;
+}
+.cow-fixed-head{
+  flex:0 0 auto;
+  margin-bottom:12px;
+  padding:15px 18px;
+}
+.cow-calves-panel{
   flex:1 1 auto;
   min-height:0;
   display:flex;
   flex-direction:column;
+  overflow:hidden;
 }
-.cow-history-heading{flex:0 0 auto}
-.cow-calf-scroll{
+.cow-calves-heading{
+  flex:0 0 auto;
+  margin-bottom:10px;
+}
+.cow-calves-scroll{
   flex:1 1 auto;
   min-height:0;
   overflow-y:auto;
   -webkit-overflow-scrolling:touch;
-  padding-bottom:8px;
+  display:grid;
+  align-content:start;
+  gap:8px;
+  padding:0 1px 8px;
+  overscroll-behavior:contain;
 }
-.cow-scorecard-fixed{
+.cow-fixed-scorecard{
   flex:0 0 auto;
-  margin-top:10px;
+  margin-top:8px;
+  margin-bottom:0;
 }
 
-/* Never-calved herd list. */
+/* V6: never-calved list */
 .never-calved-btn{
   width:100%;
   margin-top:14px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  text-align:left;
+  padding:13px 14px;
   background:var(--accent-soft);
   color:var(--accent);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  text-align:left;
   font-weight:750;
-  padding:13px 14px;
-}
-.never-calved-btn strong{
-  font-size:1.05rem;
-  margin-right:4px;
 }
 .never-calved-btn span:last-child{
   white-space:nowrap;
-  font-size:.82rem;
+  font-size:.8rem;
 }
-.never-calved-modal{max-height:min(80dvh,640px)}
+.never-calved-modal{
+  max-height:80dvh;
+}
 .never-calved-grid{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
   gap:8px;
-  margin-top:14px;
-  max-height:46dvh;
+  max-height:45dvh;
   overflow-y:auto;
-  -webkit-overflow-scrolling:touch;
+  margin-top:12px;
 }
 .never-calved-cow{
-  min-height:52px;
-  padding:8px 4px;
-  border:1px solid var(--line);
+  min-height:50px;
+  padding:7px 4px;
   background:var(--panel);
+  border:1px solid var(--line);
   color:var(--text);
   font-weight:850;
-  font-size:1rem;
 }
+
 @media(max-width:420px){
-  .cow-screen{padding-top:14px}
-  .cow-screen .cow-head{padding:14px}
-  .cow-screen .inline-field{margin-top:12px}
-  .never-calved-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .cow-page-fixed{
+    padding:12px 11px calc(8px + env(safe-area-inset-bottom));
+  }
+  .cow-fixed-head{
+    padding:13px 14px;
+  }
+  .cow-fixed-head .brand-number{
+    font-size:2.15rem;
+  }
+  .cow-fixed-head .inline-field{
+    margin-top:10px;
+  }
+  .cow-calves-heading h2{
+    font-size:1.05rem;
+  }
+  .cow-calves-scroll .calf-card{
+    padding:11px 13px;
+  }
 }
