@@ -119,14 +119,15 @@ async function getAuthSession(){
   if(result?.error)throw new Error(result.error.message||"Could not read authentication session");
   return result?.data||null;
 }
-function authTokenFromSession(session){
-  return session?.session?.token||null;
+async function getAuthToken(){
+  const token=await authClient.getJWTToken?.();
+  return typeof token==="string"&&token.trim()?token.trim():null;
 }
 function authDisplayName(session){
   return String(session?.user?.name||session?.user?.email||"").trim();
 }
-async function testWorkerAuth(session){
-  const token=authTokenFromSession(session);
+async function testWorkerAuth(){
+  const token=await getAuthToken();
   if(!token)throw new Error("Neon Auth did not return a JWT for this session.");
   const response=await fetch(`${API_BASE}/auth-test`,{
     headers:{Accept:"application/json",Authorization:`Bearer ${token}`},
@@ -147,7 +148,7 @@ async function bootstrapAuth(){
       render();
       return;
     }
-    await testWorkerAuth(session);
+    await testWorkerAuth();
     authSession=session;
     state.currentUser=authDisplayName(session);
     saveState();
