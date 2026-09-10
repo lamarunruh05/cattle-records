@@ -138,6 +138,10 @@ async function testWorkerAuth(){
   return data;
 }
 async function bootstrapAuth(){
+  const resetToken=new URLSearchParams(window.location.search).get("token");
+  const resetError=new URLSearchParams(window.location.search).get("error");
+  if(resetToken){view.page="resetPassword";renderResetPassword(resetToken);return;}
+  if(resetError){view.page="login";renderLogin(`Password reset link error: ${resetError}`);return;}
   render();
   try{
     const session=await getAuthSession();
@@ -176,32 +180,58 @@ function usePage(html){
   app.innerHTML=html;
   modalRoot.innerHTML="";
 }
-function render(){if(view.page==="login")return renderLogin();if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();return renderHome()}
+function render(){if(view.page==="login")return renderLogin();if(view.page==="forgotPassword")return renderForgotPassword();if(view.page==="resetPassword")return renderResetPassword(new URLSearchParams(window.location.search).get("token")||"");if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();return renderHome()}
 function renderLogin(errorMessage=""){
-  usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with your farm account.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<form class="stack" id="emailLoginForm"><label class="field"><span>Email</span><input id="loginEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><label class="field"><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Password"></label><button class="primary" id="emailLoginBtn" type="submit">Sign in</button></form></section></main>`);
+  usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with your farm account.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<form class="stack" id="emailLoginForm"><label class="field"><span>Email</span><input id="loginEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><label class="field"><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Password"></label><button class="primary" id="emailLoginBtn" type="submit">Sign in</button><button class="auth-link" id="forgotPasswordBtn" type="button">Forgot password?</button></form></section></main>`);
+  document.getElementById("forgotPasswordBtn").onclick=()=>{view.page="forgotPassword";render()};
   document.getElementById("emailLoginForm").onsubmit=async(event)=>{
     event.preventDefault();
     const btn=document.getElementById("emailLoginBtn");
     const email=document.getElementById("loginEmail").value.trim();
     const password=document.getElementById("loginPassword").value;
-    btn.disabled=true;
-    btn.textContent="Signing in…";
+    btn.disabled=true;btn.textContent="Signing in…";
     try{
       const result=await authClient.signIn.email({email,password});
       if(result?.error)throw new Error(result.error.message||"Email or password was not accepted");
       const session=await getAuthSession();
       if(!session?.user)throw new Error("Signed in, but Neon Auth did not return a session.");
       await testWorkerAuth();
-      authSession=session;
-      state.currentUser=authDisplayName(session);
-      saveState();
-      view.page="home";
-      render();
-      syncCowsFromNeon();
-    }catch(err){
-      console.error("Email sign in failed",err);
-      renderLogin(err.message||"Could not sign in");
-    }
+      authSession=session;state.currentUser=authDisplayName(session);saveState();view.page="home";render();syncCowsFromNeon();
+    }catch(err){console.error("Email sign in failed",err);renderLogin(err.message||"Could not sign in");}
+  };
+}
+function renderForgotPassword(message="",isError=false){
+  usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Reset password</h1><p class="muted">Enter your account email and we'll send you a password reset link.</p>${message?`<p class="${isError?"auth-error":"auth-success"}">${esc(message)}</p>`:""}<form class="stack" id="forgotPasswordForm"><label class="field"><span>Email</span><input id="resetEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><button class="primary" id="sendResetBtn" type="submit">Send reset link</button><button class="auth-link" id="backToLoginBtn" type="button">Back to sign in</button></form></section></main>`);
+  document.getElementById("backToLoginBtn").onclick=()=>{view.page="login";render()};
+  document.getElementById("forgotPasswordForm").onsubmit=async(event)=>{
+    event.preventDefault();
+    const btn=document.getElementById("sendResetBtn");
+    const email=document.getElementById("resetEmail").value.trim();
+    btn.disabled=true;btn.textContent="Sending…";
+    try{
+      const redirectTo=`${window.location.origin}${window.location.pathname}`;
+      const result=await authClient.requestPasswordReset({email,redirectTo});
+      if(result?.error)throw new Error(result.error.message||"Could not send reset email");
+      renderForgotPassword("If that email belongs to an account, a password reset link has been sent. Check your inbox and spam folder.",false);
+    }catch(err){console.error("Password reset request failed",err);renderForgotPassword(err.message||"Could not send reset email",true);}
+  };
+}
+function renderResetPassword(token,message="",isError=false){
+  if(!token){view.page="login";return renderLogin("This password reset link is missing its reset token.");}
+  usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Choose a new password</h1><p class="muted">Enter your new farm account password.</p>${message?`<p class="${isError?"auth-error":"auth-success"}">${esc(message)}</p>`:""}<form class="stack" id="resetPasswordForm"><label class="field"><span>New password</span><input id="newPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters"></label><label class="field"><span>Confirm password</span><input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="Enter it again"></label><button class="primary" id="savePasswordBtn" type="submit">Save new password</button></form></section></main>`);
+  document.getElementById("resetPasswordForm").onsubmit=async(event)=>{
+    event.preventDefault();
+    const password=document.getElementById("newPassword").value;
+    const confirm=document.getElementById("confirmPassword").value;
+    if(password!==confirm)return renderResetPassword(token,"The two passwords don't match.",true);
+    const btn=document.getElementById("savePasswordBtn");btn.disabled=true;btn.textContent="Saving…";
+    try{
+      const result=await authClient.resetPassword({newPassword:password,token});
+      if(result?.error)throw new Error(result.error.message||"Could not reset password");
+      history.replaceState({},"",window.location.pathname);
+      view.page="login";
+      renderLogin("Password changed successfully. Sign in with your new password.");
+    }catch(err){console.error("Password reset failed",err);renderResetPassword(token,err.message||"Could not reset password",true);}
   };
 }
 function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null,calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length,dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>

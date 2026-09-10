@@ -1056,3 +1056,7 @@ body,#app{min-height:100vh;min-height:100dvh}
 
 .auth-error{margin:14px 0 0;padding:10px 12px;border-radius:12px;background:var(--danger-soft);color:var(--danger);font-size:.85rem;line-height:1.35;font-weight:700}
 button:disabled{opacity:.65;cursor:default}
+
+.auth-link{background:transparent;border:0;box-shadow:none;color:var(--green,#2f684c);font:inherit;font-weight:700;padding:8px 10px;text-decoration:underline;text-underline-offset:3px}
+.auth-link:active{transform:none}
+.auth-success{margin:14px 0 0;padding:10px 12px;border-radius:12px;background:#e5f1e8;color:#285d3e;font-size:.85rem;line-height:1.35;font-weight:700}
