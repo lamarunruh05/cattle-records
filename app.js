@@ -183,6 +183,7 @@ async function bootstrapAuth(){
     renderLogin(err.message||"Could not verify authentication");
   }
 }
+function sortedCalves(cow){return [...(cow?.calves||[])].sort((a,b)=>(Number(b.year)-Number(a.year))||(Number(b.month)-Number(a.month)))}
 function latestCurrentYearCalf(cow){return sortedCalves(cow).find(c=>Number(c.year)===currentYear())||null}
 function monthsApart(a,b){return (b.year-a.year)*12+(b.month-a.month)}
 function statsFor(cow){const a=[...cow.calves].sort((x,y)=>(x.year-y.year)||(x.month-y.month)),total=a.length,dead=a.filter(c=>c.dead).length,live=total-dead;let avgInterval=null;if(total>=2){const ints=[];for(let i=1;i<a.length;i++)ints.push(monthsApart(a[i-1],a[i]));avgInterval=ints.reduce((s,n)=>s+n,0)/ints.length}let calvingRate=null;if(total){const first=a[0].year,yearsExpected=Math.max(1,currentYear()-first+1),calvedYears=new Set(a.filter(c=>c.year>=first&&c.year<=currentYear()).map(c=>c.year)).size;calvingRate=calvedYears/yearsExpected*100}return{total,dead,live,survival:total?live/total*100:null,deadRate:total?dead/total*100:null,avgInterval,calvingRate}}
