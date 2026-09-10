@@ -140,37 +140,39 @@ async function testWorkerAuth(){
 async function bootstrapAuth(){
   render();
   const returnedFromGoogle=sessionStorage.getItem("cattleAuthAttempt")==="google";
+  const urlParams=[...new URLSearchParams(window.location.search).keys()];
   try{
-    const session=await getAuthSession();
-    if(!session?.user){
+    const raw=await authClient.getSession();
+    const rawKeys=raw&&typeof raw==="object"?Object.keys(raw):[];
+    const data=raw?.data??null;
+    const dataKeys=data&&typeof data==="object"?Object.keys(data):[];
+    const hasUser=!!data?.user;
+    const hasSessionObject=!!data?.session;
+    const hasSessionToken=!!data?.session?.token;
+    const hasJwtMethod=typeof authClient.getJWTToken==="function";
+
+    if(raw?.error)throw new Error(raw.error.message||"Could not read authentication session");
+    if(!hasUser){
       state.currentUser="";
       saveState();
       view.page="login";
       if(returnedFromGoogle){
-        renderLogin("DIAGNOSTIC: Google returned to Cattle Records, but Neon Auth did not restore a signed-in session.");
-      }else{
-        render();
-      }
+        const params=urlParams.length?urlParams.join(", "):"none";
+        renderLogin(`DIAGNOSTIC V29: Google returned. getSession() has no user. Response keys: ${rawKeys.join(", ")||"none"}. Data keys: ${dataKeys.join(", ")||"none"}. Session object: ${hasSessionObject?"yes":"no"}. Session token: ${hasSessionToken?"yes":"no"}. getJWTToken(): ${hasJwtMethod?"available":"missing"}. Return URL parameters: ${params}.`);
+      }else render();
       return;
     }
 
     const token=await getAuthToken();
-    if(!token){
-      throw new Error("DIAGNOSTIC: Neon session found, but no JWT was returned.");
-    }
-
-    const response=await fetch(`${API_BASE}/auth-test`,{
-      headers:{Accept:"application/json",Authorization:`Bearer ${token}`},
-      cache:"no-store"
-    });
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok||!data.ok){
-      throw new Error(`DIAGNOSTIC: Session and JWT found, but Worker rejected it (${response.status}): ${data.error||data.message||"Unknown error"}`);
-    }
+    if(!token)throw new Error(`DIAGNOSTIC V29: Neon session and user found, but no JWT was returned. Session token field: ${hasSessionToken?"present":"missing"}. getJWTToken(): ${hasJwtMethod?"available":"missing"}.`);
+    const jwtLike=token.split(".").length===3;
+    const response=await fetch(`${API_BASE}/auth-test`,{headers:{Accept:"application/json",Authorization:`Bearer ${token}`},cache:"no-store"});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok||!result.ok)throw new Error(`DIAGNOSTIC V29: User + JWT found (${jwtLike?"JWT-shaped":"not JWT-shaped"}), but Worker rejected it (${response.status}): ${result.error||result.message||"Unknown error"}`);
 
     sessionStorage.removeItem("cattleAuthAttempt");
-    authSession=session;
-    state.currentUser=authDisplayName(session);
+    authSession=data;
+    state.currentUser=authDisplayName(data);
     saveState();
     view.page="home";
     render();
@@ -181,17 +183,9 @@ async function bootstrapAuth(){
     state.currentUser="";
     saveState();
     view.page="login";
-    renderLogin(err.message||"DIAGNOSTIC: Could not verify authentication.");
+    renderLogin(err.message||"Could not verify authentication");
   }
 }
-function currentYear(){return new Date().getFullYear()}
-function appGender(v){const g=String(v||"").trim().toLowerCase();if(g==="male"||g==="bull")return "Bull";if(g==="female"||g==="heifer")return "Heifer";return ""}
-function monthName(m){return new Intl.DateTimeFormat("en",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
-function fullMonthName(m){return new Intl.DateTimeFormat("en",{month:"long",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
-function formatDateTime(iso){return new Intl.DateTimeFormat("en",{year:"numeric",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(iso))}
-function shortDate(iso){const d=new Date(iso),n=new Date();if(d.toDateString()===n.toDateString())return new Intl.DateTimeFormat("en",{hour:"numeric",minute:"2-digit"}).format(d);return new Intl.DateTimeFormat("en",{month:"short",day:"numeric"}).format(d)}
-function sortedCows(cows){return [...cows].sort((a,b)=>a.brand.localeCompare(b.brand,undefined,{numeric:true,sensitivity:"base"}))}
-function sortedCalves(cow){return [...cow.calves].sort((a,b)=>(b.year-a.year)||(b.month-a.month))}
 function latestCurrentYearCalf(cow){return sortedCalves(cow).find(c=>Number(c.year)===currentYear())||null}
 function monthsApart(a,b){return (b.year-a.year)*12+(b.month-a.month)}
 function statsFor(cow){const a=[...cow.calves].sort((x,y)=>(x.year-y.year)||(x.month-y.month)),total=a.length,dead=a.filter(c=>c.dead).length,live=total-dead;let avgInterval=null;if(total>=2){const ints=[];for(let i=1;i<a.length;i++)ints.push(monthsApart(a[i-1],a[i]));avgInterval=ints.reduce((s,n)=>s+n,0)/ints.length}let calvingRate=null;if(total){const first=a[0].year,yearsExpected=Math.max(1,currentYear()-first+1),calvedYears=new Set(a.filter(c=>c.year>=first&&c.year<=currentYear()).map(c=>c.year)).size;calvingRate=calvedYears/yearsExpected*100}return{total,dead,live,survival:total?live/total*100:null,deadRate:total?dead/total*100:null,avgInterval,calvingRate}}
