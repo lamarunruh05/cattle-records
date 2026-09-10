@@ -1053,3 +1053,6 @@ body,#app{min-height:100vh;min-height:100dvh}
   .home-screen .home-summary{margin-top:10px;padding-top:10px;padding-bottom:6px}
   .home-ranch-scene{min-height:90px}
 }
+
+.auth-error{margin:14px 0 0;padding:10px 12px;border-radius:12px;background:var(--danger-soft);color:var(--danger);font-size:.85rem;line-height:1.35;font-weight:700}
+button:disabled{opacity:.65;cursor:default}

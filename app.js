@@ -1,3 +1,9 @@
+import { createAuthClient } from "https://esm.sh/@neondatabase/auth@0.2.0-beta.1?bundle";
+
+const NEON_AUTH_URL="https://ep-lively-breeze-acpy4xfq.neonauth.sa-east-1.aws.neon.tech/neondb/auth";
+const authClient=createAuthClient(NEON_AUTH_URL);
+let authSession=null;
+
 function uid(){return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10)}
 const STORAGE_KEY="cattleRecordsPrototypeV2";
 const API_BASE="https://cattle-records-api.lamarunruh0.workers.dev";
@@ -18,7 +24,7 @@ const initialData={
 };
 let state=loadState();
 if(!Array.isArray(state.owners))state.owners=[];
-let view={page:state.currentUser?"home":"login",cowId:null,ownerFilter:"",search:""};
+let view={page:"login",cowId:null,ownerFilter:"",search:""};
 let pendingPhoto=null;
 const app=document.getElementById("app"),modalRoot=document.getElementById("modalRoot");
 function loadState(){try{const raw=localStorage.getItem(STORAGE_KEY);if(raw)return JSON.parse(raw)}catch{}return JSON.parse(JSON.stringify(initialData))}
@@ -108,6 +114,55 @@ async function syncCowsFromNeon({rerender=true}={}){
   })();
   return cattleSyncInFlight;
 }
+async function getAuthSession(){
+  const result=await authClient.getSession();
+  if(result?.error)throw new Error(result.error.message||"Could not read authentication session");
+  return result?.data||null;
+}
+function authTokenFromSession(session){
+  return session?.session?.token||null;
+}
+function authDisplayName(session){
+  return String(session?.user?.name||session?.user?.email||"").trim();
+}
+async function testWorkerAuth(session){
+  const token=authTokenFromSession(session);
+  if(!token)throw new Error("Neon Auth did not return a JWT for this session.");
+  const response=await fetch(`${API_BASE}/auth-test`,{
+    headers:{Accept:"application/json",Authorization:`Bearer ${token}`},
+    cache:"no-store"
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok)throw new Error(data.error||data.message||`Authentication test failed (${response.status})`);
+  return data;
+}
+async function bootstrapAuth(){
+  render();
+  try{
+    const session=await getAuthSession();
+    if(!session?.user){
+      state.currentUser="";
+      saveState();
+      view.page="login";
+      render();
+      return;
+    }
+    await testWorkerAuth(session);
+    authSession=session;
+    state.currentUser=authDisplayName(session);
+    saveState();
+    view.page="home";
+    render();
+    syncCowsFromNeon();
+  }catch(err){
+    console.error("Authentication startup check failed",err);
+    authSession=null;
+    state.currentUser="";
+    saveState();
+    view.page="login";
+    renderLogin(err.message||"Could not verify authentication");
+  }
+}
 function currentYear(){return new Date().getFullYear()}
 function appGender(v){const g=String(v||"").trim().toLowerCase();if(g==="male"||g==="bull")return "Bull";if(g==="female"||g==="heifer")return "Heifer";return ""}
 function monthName(m){return new Intl.DateTimeFormat("en",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
@@ -129,7 +184,38 @@ function usePage(html){
   modalRoot.innerHTML="";
 }
 function render(){if(view.page==="login")return renderLogin();if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();return renderHome()}
-function renderLogin(){usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Enter your username to open the shared farm records.</p><form id="loginForm" class="stack"><label><span>Username</span><input id="usernameInput" maxlength="40" required placeholder="Your name"></label><button class="primary" type="submit">Continue</button></form></section></main>`);document.getElementById("loginForm").addEventListener("submit",e=>{e.preventDefault();const u=document.getElementById("usernameInput").value.trim();if(!u)return;state.currentUser=u;saveState();view.page="home";render()})}
+function renderLogin(errorMessage=""){
+  usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with your farm account.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<form id="loginForm" class="stack"><label><span>Email</span><input id="emailInput" type="email" autocomplete="email" required placeholder="you@example.com"></label><label><span>Password</span><input id="passwordInput" type="password" autocomplete="current-password" required placeholder="Password"></label><button class="primary" id="loginBtn" type="submit">Sign in</button></form></section></main>`);
+  document.getElementById("loginForm").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const email=document.getElementById("emailInput").value.trim();
+    const password=document.getElementById("passwordInput").value;
+    const btn=document.getElementById("loginBtn");
+    if(!email||!password)return;
+    btn.disabled=true;
+    btn.textContent="Signing in…";
+    try{
+      const result=await authClient.signIn.email({email,password});
+      if(result?.error)throw new Error(result.error.message||"Sign in failed");
+      const session=await getAuthSession();
+      if(!session?.user)throw new Error("Sign in succeeded, but no user session was returned.");
+      await testWorkerAuth(session);
+      authSession=session;
+      state.currentUser=authDisplayName(session);
+      saveState();
+      view.page="home";
+      render();
+      syncCowsFromNeon();
+    }catch(err){
+      console.error("Sign in failed",err);
+      try{await authClient.signOut()}catch{}
+      authSession=null;
+      state.currentUser="";
+      saveState();
+      renderLogin(err.message||"Could not sign in");
+    }
+  });
+}
 function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null,calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length,dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>
 <section class="home-ranch-scene" aria-hidden="true"></section>
 </main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render();syncCowsFromNeon()};document.getElementById("openChat").onclick=()=>{view.page="chat";render()};document.getElementById("menuBtn").onclick=showFarmMenu}
@@ -961,7 +1047,7 @@ function showNeverCalvedModal(){
     });
   });
 }
-function showFarmMenu(){openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="farmProfile">Farm profile</button><button class="soft" id="logout">Log out</button></div></div>`,()=>{document.getElementById("closeMenu").onclick=closeModal;document.getElementById("farmProfile").onclick=showFarmProfile;document.getElementById("logout").onclick=()=>{state.currentUser="";saveState();closeModal();view.page="login";render()}})}
+function showFarmMenu(){openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="farmProfile">Farm profile</button><button class="soft" id="logout">Log out</button></div></div>`,()=>{document.getElementById("closeMenu").onclick=closeModal;document.getElementById("farmProfile").onclick=showFarmProfile;document.getElementById("logout").onclick=async()=>{const btn=document.getElementById("logout");btn.disabled=true;btn.textContent="Logging out…";try{await authClient.signOut()}catch(err){console.error("Neon Auth sign out failed",err)}authSession=null;state.currentUser="";saveState();closeModal();view.page="login";render()}})}
 function showFarmProfile(){openModal(`<form class="modal-card" id="farmProfileForm"><p class="eyebrow">Settings</p><h2>Farm profile</h2><div class="stack"><label><span>Farm name</span><input id="farmNameInput" maxlength="100" value="${attr(state.farmName||"")}"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelFarm">Cancel</button><button type="submit" class="primary">Save</button></div></form>`,()=>{document.getElementById("cancelFarm").onclick=closeModal;document.getElementById("farmProfileForm").onsubmit=e=>{e.preventDefault();state.farmName=document.getElementById("farmNameInput").value.trim()||"Cattle Records";saveState();closeModal();render()}})}
 function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Options</h2><div class="menu-list" style="margin-top:14px"><button class="soft" id="editCow">Edit brand number</button><button class="danger" id="deleteCow">Delete cow</button><button class="soft" id="closeCowMenu">Cancel</button></div></div>`,()=>{
   document.getElementById("closeCowMenu").onclick=closeModal;
@@ -1007,7 +1093,7 @@ function showEditCowModal(cow){openModal(`<form class="modal-card" id="editCowFo
     }catch(err){alert(`Could not update cow in the shared database. ${err.message}`);btn.disabled=false;btn.textContent="Save"}
   };
 })}
-try{render();if(state.currentUser)syncCowsFromNeon()}catch(err){
+try{bootstrapAuth()}catch(err){
   console.error(err);
   const a=document.getElementById("app");
   if(a)a.innerHTML='<main class="screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h2>App could not start</h2><p class="muted">Please refresh the page. If this message remains, send a screenshot.</p></section></main>';
