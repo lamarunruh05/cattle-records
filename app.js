@@ -1,5 +1,6 @@
 function uid(){return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10)}
 const STORAGE_KEY="cattleRecordsPrototypeV2";
+const API_BASE="https://cattle-records-api.lamarunruh0.workers.dev";
 const initialData={
   farmName:"Fazenda Monte Alegre",currentUser:"",
   cows:[
@@ -654,7 +655,7 @@ function showBatchCalvesModal(){
     renderRows([]);
   });
 }
-function showAddCowModal(){openModal(`<form class="modal-card" id="addCowForm"><p class="eyebrow">New cow</p><h2>Add brand number</h2><div class="stack"><label><span>Brand number</span><input id="newBrand" required maxlength="30" inputmode="numeric"></label><label><span>Owner</span><input id="newOwner" maxlength="80" placeholder="Optional"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelCow">Cancel</button><button type="submit" class="primary">Add cow</button></div></form>`,()=>{document.getElementById("cancelCow").onclick=closeModal;document.getElementById("addCowForm").onsubmit=e=>{e.preventDefault();const brand=document.getElementById("newBrand").value.trim(),owner=document.getElementById("newOwner").value.trim();if(!brand)return;if(state.cows.some(c=>c.brand.toLowerCase()===brand.toLowerCase())){alert("That brand number already exists.");return}state.cows.push({id:uid(),brand,owner,calves:[]});saveState();closeModal();render()}})}
+function showAddCowModal(){openModal(`<form class="modal-card" id="addCowForm"><p class="eyebrow">New cow</p><h2>Add brand number</h2><div class="stack"><label><span>Brand number</span><input id="newBrand" required maxlength="30" inputmode="numeric"></label><label><span>Owner</span><input id="newOwner" maxlength="80" placeholder="Optional"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelCow">Cancel</button><button type="submit" class="primary" id="saveCowBtn">Add cow</button></div></form>`,()=>{document.getElementById("cancelCow").onclick=closeModal;document.getElementById("addCowForm").onsubmit=async e=>{e.preventDefault();const brand=document.getElementById("newBrand").value.trim(),owner=document.getElementById("newOwner").value.trim(),btn=document.getElementById("saveCowBtn");if(!brand)return;if(state.cows.some(c=>c.brand.toLowerCase()===brand.toLowerCase())){alert("That brand number already exists.");return}btn.disabled=true;btn.textContent="Saving…";try{const response=await fetch(`${API_BASE}/api/cows`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({brand_number:brand,created_by:state.currentUser||null})});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not save cow");state.cows.push({id:data.cow.id,brand:data.cow.brand_number,owner,calves:[]});saveState();closeModal();render()}catch(err){alert(`Could not save cow to the shared database. ${err.message}`);btn.disabled=false;btn.textContent="Add cow"}}})}
 function showCalfModal(cow,calf){
   const editing=!!calf;
   const current=calf||{
