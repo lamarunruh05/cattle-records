@@ -115,13 +115,19 @@ async function syncCowsFromNeon({rerender=true}={}){
   return cattleSyncInFlight;
 }
 async function getAuthSession(){
-  const result=await authClient.getSession();
-  if(result?.error)throw new Error(result.error.message||"Could not read authentication session");
+  let result;
+  try{result=await authClient.getSession();}
+  catch(err){throw new Error(`SESSION CHECK failed: ${err?.message||err}`);}
+  if(result?.error)throw new Error(`SESSION CHECK failed: ${result.error.message||"Could not read authentication session"}`);
   return result?.data||null;
 }
 async function getAuthToken(){
-  const token=await authClient.getJWTToken?.();
-  return typeof token==="string"&&token.trim()?token.trim():null;
+  if(typeof authClient.getJWTToken!=="function")throw new Error("JWT STEP failed: getJWTToken() is not available in this Auth client.");
+  let token;
+  try{token=await authClient.getJWTToken();}
+  catch(err){throw new Error(`JWT STEP failed: ${err?.message||err}`);}
+  if(!(typeof token==="string"&&token.trim()))throw new Error("JWT STEP failed: Neon Auth returned no JWT.");
+  return token.trim();
 }
 function authDisplayName(session){
   return String(session?.user?.name||session?.user?.email||"").trim();
@@ -129,12 +135,15 @@ function authDisplayName(session){
 async function testWorkerAuth(){
   const token=await getAuthToken();
   if(!token)throw new Error("Neon Auth did not return a JWT for this session.");
-  const response=await fetch(`${API_BASE}/auth-test`,{
-    headers:{Accept:"application/json",Authorization:`Bearer ${token}`},
-    cache:"no-store"
-  });
+  let response;
+  try{
+    response=await fetch(`${API_BASE}/auth-test`,{
+      headers:{Accept:"application/json",Authorization:`Bearer ${token}`},
+      cache:"no-store"
+    });
+  }catch(err){throw new Error(`WORKER /auth-test failed to connect: ${err?.message||err}`);}
   const data=await response.json().catch(()=>({}));
-  if(!response.ok||!data.ok)throw new Error(data.error||data.message||`Authentication test failed (${response.status})`);
+  if(!response.ok||!data.ok)throw new Error(`WORKER /auth-test returned HTTP ${response.status}: ${data.error||data.message||"No error message"}`);
   return data;
 }
 async function bootstrapAuth(){
@@ -191,13 +200,27 @@ function renderLogin(errorMessage=""){
     const password=document.getElementById("loginPassword").value;
     btn.disabled=true;btn.textContent="Signing in…";
     try{
-      const result=await authClient.signIn.email({email,password});
-      if(result?.error)throw new Error(result.error.message||"Email or password was not accepted");
-      const session=await getAuthSession();
-      if(!session?.user)throw new Error("Signed in, but Neon Auth did not return a session.");
-      await testWorkerAuth();
+      let result;
+      try{
+        result=await authClient.signIn.email({email,password});
+      }catch(err){
+        throw new Error(`SIGN-IN REQUEST FAILED: ${err?.message||"Unknown error"}`);
+      }
+      if(result?.error)throw new Error(`SIGN-IN REJECTED: ${result.error.message||result.error.code||"Email or password was not accepted"}`);
+      let session;
+      try{
+        session=await getAuthSession();
+      }catch(err){
+        throw new Error(`SESSION CHECK FAILED: ${err?.message||"Unknown error"}`);
+      }
+      if(!session?.user)throw new Error("SIGN-IN SUCCEEDED, BUT SESSION CHECK RETURNED NO USER.");
+      try{
+        await testWorkerAuth();
+      }catch(err){
+        throw new Error(`WORKER AUTH TEST FAILED: ${err?.message||"Unknown error"}`);
+      }
       authSession=session;state.currentUser=authDisplayName(session);saveState();view.page="home";render();syncCowsFromNeon();
-    }catch(err){console.error("Email sign in failed",err);renderLogin(err.message||"Could not sign in");}
+    }catch(err){console.error("Email sign in failed",err);renderLogin(`DIAGNOSTIC V33: ${err.message||"Could not sign in"}`);}
   };
 }
 function renderForgotPassword(message="",isError=false){
