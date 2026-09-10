@@ -58,19 +58,40 @@ async function syncCowsFromNeon({rerender=true}={}){
   cattleSyncInFlight=(async()=>{
     try{
       await syncOwnersFromNeon();
-      const response=await fetch(`${API_BASE}/api/cows`,{headers:{Accept:"application/json"},cache:"no-store"});
-      const data=await response.json();
-      if(!response.ok||!data.ok||!Array.isArray(data.cows))throw new Error(data.error||data.message||"Could not load cattle");
+      const [cowsResponse,calvesResponse]=await Promise.all([
+        fetch(`${API_BASE}/api/cows`,{headers:{Accept:"application/json"},cache:"no-store"}),
+        fetch(`${API_BASE}/api/calves`,{headers:{Accept:"application/json"},cache:"no-store"})
+      ]);
+      const [cowsData,calvesData]=await Promise.all([cowsResponse.json(),calvesResponse.json()]);
+      if(!cowsResponse.ok||!cowsData.ok||!Array.isArray(cowsData.cows))throw new Error(cowsData.error||cowsData.message||"Could not load cattle");
+      if(!calvesResponse.ok||!calvesData.ok||!Array.isArray(calvesData.calves))throw new Error(calvesData.error||calvesData.message||"Could not load calves");
       const localById=new Map(state.cows.map(c=>[String(c.id),c]));
       const localByBrand=new Map(state.cows.map(c=>[String(c.brand).trim().toLowerCase(),c]));
-      state.cows=data.cows.map(dbCow=>{
+      const calvesByCow=new Map();
+      for(const dbCalf of calvesData.calves){
+        const key=String(dbCalf.cow_id);
+        if(!calvesByCow.has(key))calvesByCow.set(key,[]);
+        calvesByCow.get(key).push({
+          id:dbCalf.id,
+          month:Number(dbCalf.birth_month),
+          year:Number(dbCalf.birth_year),
+          gender:appGender(dbCalf.gender),
+          color:dbCalf.color||"",
+          dead:Boolean(dbCalf.is_dead),
+          notes:dbCalf.notes||"",
+          createdBy:dbCalf.created_by||"",
+          createdAt:dbCalf.created_at||null,
+          updatedAt:dbCalf.updated_at||null
+        });
+      }
+      state.cows=cowsData.cows.map(dbCow=>{
         const local=localById.get(String(dbCow.id))||localByBrand.get(String(dbCow.brand_number).trim().toLowerCase());
         return{
           id:dbCow.id,
           brand:String(dbCow.brand_number),
           ownerId:dbCow.owner_id||null,
           owner:ownerById(dbCow.owner_id)?.name||"",
-          calves:Array.isArray(local?.calves)?local.calves:[],
+          calves:calvesByCow.get(String(dbCow.id))||[],
           notes:dbCow.notes??local?.notes??"",
           createdBy:dbCow.created_by||local?.createdBy||"",
           createdAt:dbCow.created_at||local?.createdAt||null,
