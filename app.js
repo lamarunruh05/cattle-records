@@ -185,36 +185,20 @@ function usePage(html){
 }
 function render(){if(view.page==="login")return renderLogin();if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();return renderHome()}
 function renderLogin(errorMessage=""){
-  usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with your farm account.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<form id="loginForm" class="stack"><label><span>Email</span><input id="emailInput" type="email" autocomplete="email" required placeholder="you@example.com"></label><label><span>Password</span><input id="passwordInput" type="password" autocomplete="current-password" required placeholder="Password"></label><button class="primary" id="loginBtn" type="submit">Sign in</button></form></section></main>`);
-  document.getElementById("loginForm").addEventListener("submit",async e=>{
-    e.preventDefault();
-    const email=document.getElementById("emailInput").value.trim();
-    const password=document.getElementById("passwordInput").value;
-    const btn=document.getElementById("loginBtn");
-    if(!email||!password)return;
+  usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with the Google account connected to your farm.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<div class="stack"><button class="primary" id="googleLoginBtn" type="button">Continue with Google</button></div></section></main>`);
+  document.getElementById("googleLoginBtn").onclick=async()=>{
+    const btn=document.getElementById("googleLoginBtn");
     btn.disabled=true;
-    btn.textContent="Signing in…";
+    btn.textContent="Opening Google…";
     try{
-      const result=await authClient.signIn.email({email,password});
-      if(result?.error)throw new Error(result.error.message||"Sign in failed");
-      const session=await getAuthSession();
-      if(!session?.user)throw new Error("Sign in succeeded, but no user session was returned.");
-      await testWorkerAuth(session);
-      authSession=session;
-      state.currentUser=authDisplayName(session);
-      saveState();
-      view.page="home";
-      render();
-      syncCowsFromNeon();
+      const callbackURL=`${window.location.origin}${window.location.pathname}`;
+      const result=await authClient.signIn.social({provider:"google",callbackURL});
+      if(result?.error)throw new Error(result.error.message||"Google sign in failed");
     }catch(err){
-      console.error("Sign in failed",err);
-      try{await authClient.signOut()}catch{}
-      authSession=null;
-      state.currentUser="";
-      saveState();
-      renderLogin(err.message||"Could not sign in");
+      console.error("Google sign in failed",err);
+      renderLogin(err.message||"Could not sign in with Google");
     }
-  });
+  };
 }
 function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null,calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length,dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>
 <section class="home-ranch-scene" aria-hidden="true"></section>
