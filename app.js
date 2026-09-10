@@ -1,4 +1,4 @@
-import { createAuthClient } from "https://esm.sh/@neondatabase/auth@0.2.0-beta.1?bundle";
+import { createAuthClient } from "https://esm.sh/@neondatabase/auth@0.5.0-beta?bundle";
 
 const NEON_AUTH_URL="https://ep-lively-breeze-acpy4xfq.neonauth.sa-east-1.aws.neon.tech/neondb/auth";
 const authClient=createAuthClient(NEON_AUTH_URL);
