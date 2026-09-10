@@ -861,7 +861,7 @@ function showBatchCalvesModal(){
     monthInput.addEventListener("change",()=>batch.month=Number(monthInput.value));
     yearInput.addEventListener("input",()=>batch.year=Number(yearInput.value));
 
-    document.getElementById("batchCalvesForm").onsubmit=e=>{
+    document.getElementById("batchCalvesForm").onsubmit=async e=>{
       e.preventDefault();
       batch.month=Number(monthInput.value);
       batch.year=Number(yearInput.value);
@@ -880,22 +880,47 @@ function showBatchCalvesModal(){
       }
       if(!cows.length)return;
 
-      cows.forEach(cow=>{
-        const d=batch.details[cow.id]||{};
-        cow.calves.push({
-          id:uid(),
-          month:batch.month,
-          year:batch.year,
-          gender:d.gender||"",
-          color:(d.color||"").trim(),
-          dead:!!d.dead,
-          notes:(d.notes||"").trim()
-        });
-      });
+      const saveBtn=document.getElementById("saveBatchCalves");
+      saveBtn.disabled=true;
+      saveBtn.textContent=`Saving 0/${cows.length}…`;
 
-      saveState();
-      closeModal();
-      render();
+      let saved=0;
+      try{
+        for(const cow of cows){
+          const d=batch.details[cow.id]||{};
+          const response=await apiFetch("/api/calves",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              cow_id:cow.id,
+              birth_month:batch.month,
+              birth_year:batch.year,
+              gender:d.gender||null,
+              color:(d.color||"").trim()||null,
+              is_dead:!!d.dead,
+              notes:(d.notes||"").trim()||null
+            })
+          });
+          const data=await response.json().catch(()=>({}));
+          if(!response.ok||!data.ok){
+            throw new Error(`Cow ${cow.brand}: ${data.error||data.message||`HTTP ${response.status}`}`);
+          }
+          saved++;
+          saveBtn.textContent=`Saving ${saved}/${cows.length}…`;
+        }
+
+        await syncCowsFromNeon({rerender:false});
+        closeModal();
+        render();
+      }catch(err){
+        console.error("Could not save batch calves",err);
+        await syncCowsFromNeon({rerender:false});
+        alert(saved
+          ? `${saved} of ${cows.length} calves were saved before an error occurred. The saved records are already in the shared database. ${err.message}`
+          : `Could not save calves to the shared database. ${err.message}`);
+        closeModal();
+        render();
+      }
     };
 
     renderRows([]);
