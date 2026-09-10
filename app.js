@@ -183,6 +183,13 @@ async function bootstrapAuth(){
     renderLogin(err.message||"Could not verify authentication");
   }
 }
+function currentYear(){return new Date().getFullYear()}
+function appGender(v){const g=String(v||"").trim().toLowerCase();if(g==="male"||g==="bull")return "Bull";if(g==="female"||g==="heifer")return "Heifer";return ""}
+function monthName(m){return new Intl.DateTimeFormat("en",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
+function fullMonthName(m){return new Intl.DateTimeFormat("en",{month:"long",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
+function formatDateTime(iso){return new Intl.DateTimeFormat("en",{year:"numeric",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(iso))}
+function shortDate(iso){const d=new Date(iso),n=new Date();if(d.toDateString()===n.toDateString())return new Intl.DateTimeFormat("en",{hour:"numeric",minute:"2-digit"}).format(d);return new Intl.DateTimeFormat("en",{month:"short",day:"numeric"}).format(d)}
+function sortedCows(cows){return [...cows].sort((a,b)=>a.brand.localeCompare(b.brand,undefined,{numeric:true,sensitivity:"base"}))}
 function sortedCalves(cow){return [...(cow?.calves||[])].sort((a,b)=>(Number(b.year)-Number(a.year))||(Number(b.month)-Number(a.month)))}
 function latestCurrentYearCalf(cow){return sortedCalves(cow).find(c=>Number(c.year)===currentYear())||null}
 function monthsApart(a,b){return (b.year-a.year)*12+(b.month-a.month)}
