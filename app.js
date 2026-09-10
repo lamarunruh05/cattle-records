@@ -35,7 +35,7 @@ async function syncOwnersFromNeon({rerender=false}={}){
   if(ownersSyncInFlight)return ownersSyncInFlight;
   ownersSyncInFlight=(async()=>{
     try{
-      const response=await fetch(`${API_BASE}/api/owners`,{headers:{Accept:"application/json"},cache:"no-store"});
+      const response=await apiFetch("/api/owners",{headers:{Accept:"application/json"},cache:"no-store"});
       const data=await response.json();
       if(!response.ok||!data.ok||!Array.isArray(data.owners))throw new Error(data.error||data.message||"Could not load owners");
       state.owners=data.owners.map(o=>({id:o.id,name:String(o.name)}));
@@ -53,7 +53,7 @@ async function ensureOwnerByName(name){
   if(!clean)return null;
   let owner=state.owners.find(o=>o.name.toLowerCase()===clean.toLowerCase());
   if(owner)return owner;
-  const response=await fetch(`${API_BASE}/api/owners`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:clean})});
+  const response=await apiFetch("/api/owners",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:clean})});
   const data=await response.json();
   if(response.status===409){await syncOwnersFromNeon();return state.owners.find(o=>o.name.toLowerCase()===clean.toLowerCase())||null}
   if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not save owner");
@@ -65,8 +65,8 @@ async function syncCowsFromNeon({rerender=true}={}){
     try{
       await syncOwnersFromNeon();
       const [cowsResponse,calvesResponse]=await Promise.all([
-        fetch(`${API_BASE}/api/cows`,{headers:{Accept:"application/json"},cache:"no-store"}),
-        fetch(`${API_BASE}/api/calves`,{headers:{Accept:"application/json"},cache:"no-store"})
+        apiFetch("/api/cows",{headers:{Accept:"application/json"},cache:"no-store"}),
+        apiFetch("/api/calves",{headers:{Accept:"application/json"},cache:"no-store"})
       ]);
       const [cowsData,calvesData]=await Promise.all([cowsResponse.json(),calvesResponse.json()]);
       if(!cowsResponse.ok||!cowsData.ok||!Array.isArray(cowsData.cows))throw new Error(cowsData.error||cowsData.message||"Could not load cattle");
@@ -134,6 +134,13 @@ async function getAuthToken(session=null){
     throw new Error("JWT SESSION TOKEN missing: signed-in session has no session.token.");
   }
   return token.trim();
+}
+async function apiFetch(path,options={}){
+  const token=await getAuthToken(authSession);
+  const headers=new Headers(options.headers||{});
+  headers.set("Authorization",`Bearer ${token}`);
+  if(!headers.has("Accept"))headers.set("Accept","application/json");
+  return fetch(`${API_BASE}${path}`,{...options,headers});
 }
 function authDisplayName(session){
   return String(session?.user?.name||session?.user?.email||"").trim();
@@ -399,7 +406,7 @@ function renderCow(){
     input.disabled=true;
     try{
       const owner=await ensureOwnerByName(newName);
-      const response=await fetch(`${API_BASE}/api/cows/${encodeURIComponent(cow.id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({owner_id:owner?.id||null})});
+      const response=await apiFetch(`/api/cows/${encodeURIComponent(cow.id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({owner_id:owner?.id||null})});
       const data=await response.json();
       if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not update owner");
       cow.ownerId=data.cow.owner_id||null;cow.owner=owner?.name||"";cow.updatedAt=data.cow.updated_at||null;saveState();
@@ -894,7 +901,7 @@ function showBatchCalvesModal(){
     renderRows([]);
   });
 }
-function showAddCowModal(){openModal(`<form class="modal-card" id="addCowForm"><p class="eyebrow">New cow</p><h2>Add brand number</h2><div class="stack"><label><span>Brand number</span><input id="newBrand" required maxlength="30" inputmode="numeric"></label><label><span>Owner</span><input id="newOwner" maxlength="80" placeholder="Optional"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelCow">Cancel</button><button type="submit" class="primary" id="saveCowBtn">Add cow</button></div></form>`,()=>{document.getElementById("cancelCow").onclick=closeModal;document.getElementById("addCowForm").onsubmit=async e=>{e.preventDefault();const brand=document.getElementById("newBrand").value.trim(),ownerName=document.getElementById("newOwner").value.trim(),btn=document.getElementById("saveCowBtn");if(!brand)return;if(state.cows.some(c=>c.brand.toLowerCase()===brand.toLowerCase())){alert("That brand number already exists.");return}btn.disabled=true;btn.textContent="Saving…";try{const owner=await ensureOwnerByName(ownerName);const response=await fetch(`${API_BASE}/api/cows`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({brand_number:brand,owner_id:owner?.id||null,created_by:state.currentUser||null})});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not save cow");state.cows.push({id:data.cow.id,brand:data.cow.brand_number,ownerId:data.cow.owner_id||null,owner:owner?.name||"",calves:[]});saveState();closeModal();render()}catch(err){alert(`Could not save cow to the shared database. ${err.message}`);btn.disabled=false;btn.textContent="Add cow"}}})}
+function showAddCowModal(){openModal(`<form class="modal-card" id="addCowForm"><p class="eyebrow">New cow</p><h2>Add brand number</h2><div class="stack"><label><span>Brand number</span><input id="newBrand" required maxlength="30" inputmode="numeric"></label><label><span>Owner</span><input id="newOwner" maxlength="80" placeholder="Optional"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelCow">Cancel</button><button type="submit" class="primary" id="saveCowBtn">Add cow</button></div></form>`,()=>{document.getElementById("cancelCow").onclick=closeModal;document.getElementById("addCowForm").onsubmit=async e=>{e.preventDefault();const brand=document.getElementById("newBrand").value.trim(),ownerName=document.getElementById("newOwner").value.trim(),btn=document.getElementById("saveCowBtn");if(!brand)return;if(state.cows.some(c=>c.brand.toLowerCase()===brand.toLowerCase())){alert("That brand number already exists.");return}btn.disabled=true;btn.textContent="Saving…";try{const owner=await ensureOwnerByName(ownerName);const response=await apiFetch("/api/cows",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({brand_number:brand,owner_id:owner?.id||null,created_by:state.currentUser||null})});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not save cow");state.cows.push({id:data.cow.id,brand:data.cow.brand_number,ownerId:data.cow.owner_id||null,owner:owner?.name||"",calves:[]});saveState();closeModal();render()}catch(err){alert(`Could not save cow to the shared database. ${err.message}`);btn.disabled=false;btn.textContent="Add cow"}}})}
 function showCalfModal(cow,calf){
   const editing=!!calf;
   const current=calf||{
@@ -963,7 +970,7 @@ function showCalfModal(cow,calf){
       btn.disabled=true;
       btn.textContent="Deleting…";
       try{
-        const response=await fetch(`${API_BASE}/api/calves/${encodeURIComponent(calf.id)}`,{method:"DELETE"});
+        const response=await apiFetch(`/api/calves/${encodeURIComponent(calf.id)}`,{method:"DELETE"});
         const data=await response.json();
         if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete calf");
         cow.calves=cow.calves.filter(c=>c.id!==calf.id);
@@ -995,7 +1002,7 @@ function showCalfModal(cow,calf){
         submitBtn.disabled=true;
         submitBtn.textContent="Saving…";
         try{
-          const response=await fetch(`${API_BASE}/api/calves/${encodeURIComponent(calf.id)}`,{
+          const response=await apiFetch(`/api/calves/${encodeURIComponent(calf.id)}`,{
             method:"PUT",
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({
@@ -1035,7 +1042,7 @@ function showCalfModal(cow,calf){
       submitBtn.disabled=true;
       submitBtn.textContent="Saving…";
       try{
-        const response=await fetch(`${API_BASE}/api/calves`,{
+        const response=await apiFetch("/api/calves",{
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
@@ -1113,7 +1120,7 @@ function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">
     btn.disabled=true;
     btn.textContent="Deleting…";
     try{
-      const response=await fetch(`${API_BASE}/api/cows/${encodeURIComponent(cow.id)}`,{method:"DELETE"});
+      const response=await apiFetch(`/api/cows/${encodeURIComponent(cow.id)}`,{method:"DELETE"});
       const data=await response.json();
       if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete cow");
       state.cows=state.cows.filter(c=>c.id!==cow.id);
@@ -1140,7 +1147,7 @@ function showEditCowModal(cow){openModal(`<form class="modal-card" id="editCowFo
     btn.disabled=true;btn.textContent="Saving…";
     try{
       const owner=await ensureOwnerByName(ownerName);
-      const response=await fetch(`${API_BASE}/api/cows/${encodeURIComponent(cow.id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({brand_number:brand,owner_id:owner?.id||null})});
+      const response=await apiFetch(`/api/cows/${encodeURIComponent(cow.id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({brand_number:brand,owner_id:owner?.id||null})});
       const data=await response.json();
       if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not update cow");
       cow.brand=String(data.cow.brand_number);cow.ownerId=data.cow.owner_id||null;cow.owner=owner?.name||"";cow.updatedAt=data.cow.updated_at||null;
