@@ -139,46 +139,18 @@ async function testWorkerAuth(){
 }
 async function bootstrapAuth(){
   render();
-  const returnedFromGoogle=sessionStorage.getItem("cattleAuthAttempt")==="google";
-  const searchParams=new URLSearchParams(window.location.search);
-  const urlParams=[...searchParams.keys()];
-  const oauthError=String(searchParams.get("error")||"").slice(0,160);
-  const oauthErrorDescription=String(searchParams.get("error_description")||searchParams.get("errorDescription")||"").slice(0,300);
   try{
-    const raw=await authClient.getSession();
-    const rawKeys=raw&&typeof raw==="object"?Object.keys(raw):[];
-    const data=raw?.data??null;
-    const dataKeys=data&&typeof data==="object"?Object.keys(data):[];
-    const hasUser=!!data?.user;
-    const hasSessionObject=!!data?.session;
-    const hasSessionToken=!!data?.session?.token;
-    const hasJwtMethod=typeof authClient.getJWTToken==="function";
-
-    if(raw?.error)throw new Error(raw.error.message||"Could not read authentication session");
-    if(!hasUser){
+    const session=await getAuthSession();
+    if(!session?.user){
       state.currentUser="";
       saveState();
       view.page="login";
-      if(returnedFromGoogle){
-        const params=urlParams.length?urlParams.join(", "):"none";
-        const oauthDetails=oauthError||oauthErrorDescription
-          ? ` OAuth error: ${oauthError||"(blank)"}. Description: ${oauthErrorDescription||"(none)"}.`
-          : "";
-        renderLogin(`DIAGNOSTIC V30: Google returned. getSession() has no user.${oauthDetails} Response keys: ${rawKeys.join(", ")||"none"}. Data keys: ${dataKeys.join(", ")||"none"}. Session object: ${hasSessionObject?"yes":"no"}. Session token: ${hasSessionToken?"yes":"no"}. getJWTToken(): ${hasJwtMethod?"available":"missing"}. Return URL parameters: ${params}.`);
-      }else render();
+      render();
       return;
     }
-
-    const token=await getAuthToken();
-    if(!token)throw new Error(`DIAGNOSTIC V30: Neon session and user found, but no JWT was returned. Session token field: ${hasSessionToken?"present":"missing"}. getJWTToken(): ${hasJwtMethod?"available":"missing"}.`);
-    const jwtLike=token.split(".").length===3;
-    const response=await fetch(`${API_BASE}/auth-test`,{headers:{Accept:"application/json",Authorization:`Bearer ${token}`},cache:"no-store"});
-    const result=await response.json().catch(()=>({}));
-    if(!response.ok||!result.ok)throw new Error(`DIAGNOSTIC V30: User + JWT found (${jwtLike?"JWT-shaped":"not JWT-shaped"}), but Worker rejected it (${response.status}): ${result.error||result.message||"Unknown error"}`);
-
-    sessionStorage.removeItem("cattleAuthAttempt");
-    authSession=data;
-    state.currentUser=authDisplayName(data);
+    await testWorkerAuth();
+    authSession=session;
+    state.currentUser=authDisplayName(session);
     saveState();
     view.page="home";
     render();
@@ -206,19 +178,29 @@ function usePage(html){
 }
 function render(){if(view.page==="login")return renderLogin();if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();return renderHome()}
 function renderLogin(errorMessage=""){
-  usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with the Google account connected to your farm.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<div class="stack"><button class="primary" id="googleLoginBtn" type="button">Continue with Google</button></div></section></main>`);
-  document.getElementById("googleLoginBtn").onclick=async()=>{
-    const btn=document.getElementById("googleLoginBtn");
+  usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with your farm account.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<form class="stack" id="emailLoginForm"><label class="field"><span>Email</span><input id="loginEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><label class="field"><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Password"></label><button class="primary" id="emailLoginBtn" type="submit">Sign in</button></form></section></main>`);
+  document.getElementById("emailLoginForm").onsubmit=async(event)=>{
+    event.preventDefault();
+    const btn=document.getElementById("emailLoginBtn");
+    const email=document.getElementById("loginEmail").value.trim();
+    const password=document.getElementById("loginPassword").value;
     btn.disabled=true;
-    btn.textContent="Opening Google…";
+    btn.textContent="Signing in…";
     try{
-      const callbackURL=`${window.location.origin}${window.location.pathname}`;
-      sessionStorage.setItem("cattleAuthAttempt","google");
-      const result=await authClient.signIn.social({provider:"google",callbackURL});
-      if(result?.error)throw new Error(result.error.message||"Google sign in failed");
+      const result=await authClient.signIn.email({email,password});
+      if(result?.error)throw new Error(result.error.message||"Email or password was not accepted");
+      const session=await getAuthSession();
+      if(!session?.user)throw new Error("Signed in, but Neon Auth did not return a session.");
+      await testWorkerAuth();
+      authSession=session;
+      state.currentUser=authDisplayName(session);
+      saveState();
+      view.page="home";
+      render();
+      syncCowsFromNeon();
     }catch(err){
-      console.error("Google sign in failed",err);
-      renderLogin(err.message||"Could not sign in with Google");
+      console.error("Email sign in failed",err);
+      renderLogin(err.message||"Could not sign in");
     }
   };
 }
