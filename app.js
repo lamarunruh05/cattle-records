@@ -56,6 +56,7 @@ async function syncCowsFromNeon({rerender=true}={}){
   return cattleSyncInFlight;
 }
 function currentYear(){return new Date().getFullYear()}
+function appGender(v){const g=String(v||"").trim().toLowerCase();if(g==="male"||g==="bull")return "Bull";if(g==="female"||g==="heifer")return "Heifer";return ""}
 function monthName(m){return new Intl.DateTimeFormat("en",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
 function fullMonthName(m){return new Intl.DateTimeFormat("en",{month:"long",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
 function formatDateTime(iso){return new Intl.DateTimeFormat("en",{year:"numeric",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(iso))}
@@ -751,12 +752,24 @@ function showCalfModal(cow,calf){
   </form>`,()=>{
     document.getElementById("cancelCalf").onclick=closeModal;
 
-    if(editing) document.getElementById("deleteCalf").onclick=()=>{
+    if(editing) document.getElementById("deleteCalf").onclick=async()=>{
       if(!confirm("Delete this calf record?")) return;
-      cow.calves=cow.calves.filter(c=>c.id!==calf.id);
-      saveState();
-      closeModal();
-      render();
+      const btn=document.getElementById("deleteCalf");
+      btn.disabled=true;
+      btn.textContent="Deleting…";
+      try{
+        const response=await fetch(`${API_BASE}/api/calves/${encodeURIComponent(calf.id)}`,{method:"DELETE"});
+        const data=await response.json();
+        if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete calf");
+        cow.calves=cow.calves.filter(c=>c.id!==calf.id);
+        saveState();
+        closeModal();
+        render();
+      }catch(err){
+        alert(`Could not delete calf from the shared database. ${err.message}`);
+        btn.disabled=false;
+        btn.textContent="Delete";
+      }
     };
 
     document.getElementById("calfForm").onsubmit=async e=>{
@@ -773,12 +786,44 @@ function showCalfModal(cow,calf){
         notes:document.getElementById("calfNotes").value.trim()
       };
 
-      // Editing is still local until the update/delete calf API is added.
       if(editing){
-        Object.assign(calf,record);
-        saveState();
-        closeModal();
-        render();
+        submitBtn.disabled=true;
+        submitBtn.textContent="Saving…";
+        try{
+          const response=await fetch(`${API_BASE}/api/calves/${encodeURIComponent(calf.id)}`,{
+            method:"PUT",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              birth_month:record.month,
+              birth_year:record.year,
+              gender:record.gender||null,
+              color:record.color||null,
+              is_dead:record.dead,
+              notes:record.notes||null
+            })
+          });
+          const data=await response.json();
+          if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not update calf");
+          Object.assign(calf,{
+            id:data.calf.id,
+            month:Number(data.calf.birth_month),
+            year:Number(data.calf.birth_year),
+            gender:appGender(data.calf.gender),
+            color:data.calf.color||"",
+            dead:Boolean(data.calf.is_dead),
+            notes:data.calf.notes||"",
+            createdBy:data.calf.created_by||calf.createdBy||"",
+            createdAt:data.calf.created_at||calf.createdAt||null,
+            updatedAt:data.calf.updated_at||null
+          });
+          saveState();
+          closeModal();
+          render();
+        }catch(err){
+          alert(`Could not update calf in the shared database. ${err.message}`);
+          submitBtn.disabled=false;
+          submitBtn.textContent="Save";
+        }
         return;
       }
 
@@ -805,7 +850,7 @@ function showCalfModal(cow,calf){
           id:data.calf.id,
           month:Number(data.calf.birth_month),
           year:Number(data.calf.birth_year),
-          gender:data.calf.gender||"",
+          gender:appGender(data.calf.gender),
           color:data.calf.color||"",
           dead:Boolean(data.calf.is_dead),
           notes:data.calf.notes||"",
@@ -854,7 +899,56 @@ function showNeverCalvedModal(){
 }
 function showFarmMenu(){openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="farmProfile">Farm profile</button><button class="soft" id="logout">Log out</button></div></div>`,()=>{document.getElementById("closeMenu").onclick=closeModal;document.getElementById("farmProfile").onclick=showFarmProfile;document.getElementById("logout").onclick=()=>{state.currentUser="";saveState();closeModal();view.page="login";render()}})}
 function showFarmProfile(){openModal(`<form class="modal-card" id="farmProfileForm"><p class="eyebrow">Settings</p><h2>Farm profile</h2><div class="stack"><label><span>Farm name</span><input id="farmNameInput" maxlength="100" value="${attr(state.farmName||"")}"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelFarm">Cancel</button><button type="submit" class="primary">Save</button></div></form>`,()=>{document.getElementById("cancelFarm").onclick=closeModal;document.getElementById("farmProfileForm").onsubmit=e=>{e.preventDefault();state.farmName=document.getElementById("farmNameInput").value.trim()||"Cattle Records";saveState();closeModal();render()}})}
-function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Options</h2><div class="menu-list" style="margin-top:14px"><button class="danger" id="deleteCow">Delete cow</button><button class="soft" id="closeCowMenu">Cancel</button></div></div>`,()=>{document.getElementById("closeCowMenu").onclick=closeModal;document.getElementById("deleteCow").onclick=()=>{if(!confirm(`Delete cow ${cow.brand} and all calf records?`))return;state.cows=state.cows.filter(c=>c.id!==cow.id);saveState();closeModal();view.page="cattle";render()}})}
+function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Options</h2><div class="menu-list" style="margin-top:14px"><button class="soft" id="editCow">Edit brand number</button><button class="danger" id="deleteCow">Delete cow</button><button class="soft" id="closeCowMenu">Cancel</button></div></div>`,()=>{
+  document.getElementById("closeCowMenu").onclick=closeModal;
+  document.getElementById("editCow").onclick=()=>showEditCowModal(cow);
+  document.getElementById("deleteCow").onclick=async()=>{
+    if(!confirm(`Delete cow ${cow.brand} and all calf records?`))return;
+    const btn=document.getElementById("deleteCow");
+    btn.disabled=true;
+    btn.textContent="Deleting…";
+    try{
+      const response=await fetch(`${API_BASE}/api/cows/${encodeURIComponent(cow.id)}`,{method:"DELETE"});
+      const data=await response.json();
+      if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete cow");
+      state.cows=state.cows.filter(c=>c.id!==cow.id);
+      saveState();
+      closeModal();
+      view.page="cattle";
+      render();
+    }catch(err){
+      alert(`Could not delete cow from the shared database. ${err.message}`);
+      btn.disabled=false;
+      btn.textContent="Delete cow";
+    }
+  };
+})}
+function showEditCowModal(cow){openModal(`<form class="modal-card" id="editCowForm"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Edit cow</h2><div class="stack"><label><span>Brand number</span><input id="editBrand" required maxlength="30" inputmode="numeric" value="${attr(cow.brand)}"></label></div><p class="muted">Owner editing will be connected when shared owners are moved to Neon.</p><div class="modal-actions"><button type="button" class="soft" id="cancelEditCow">Cancel</button><button type="submit" class="primary" id="saveEditCow">Save</button></div></form>`,()=>{
+  document.getElementById("cancelEditCow").onclick=closeModal;
+  document.getElementById("editCowForm").onsubmit=async e=>{
+    e.preventDefault();
+    const brand=document.getElementById("editBrand").value.trim();
+    const btn=document.getElementById("saveEditCow");
+    if(!brand)return;
+    if(state.cows.some(c=>c.id!==cow.id&&c.brand.toLowerCase()===brand.toLowerCase())){alert("That brand number already exists.");return}
+    btn.disabled=true;
+    btn.textContent="Saving…";
+    try{
+      const response=await fetch(`${API_BASE}/api/cows/${encodeURIComponent(cow.id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({brand_number:brand})});
+      const data=await response.json();
+      if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not update cow");
+      cow.brand=String(data.cow.brand_number);
+      cow.updatedAt=data.cow.updated_at||null;
+      saveState();
+      closeModal();
+      render();
+    }catch(err){
+      alert(`Could not update cow in the shared database. ${err.message}`);
+      btn.disabled=false;
+      btn.textContent="Save";
+    }
+  };
+})}
 try{render();if(state.currentUser)syncCowsFromNeon()}catch(err){
   console.error(err);
   const a=document.getElementById("app");
