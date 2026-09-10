@@ -140,7 +140,10 @@ async function testWorkerAuth(){
 async function bootstrapAuth(){
   render();
   const returnedFromGoogle=sessionStorage.getItem("cattleAuthAttempt")==="google";
-  const urlParams=[...new URLSearchParams(window.location.search).keys()];
+  const searchParams=new URLSearchParams(window.location.search);
+  const urlParams=[...searchParams.keys()];
+  const oauthError=String(searchParams.get("error")||"").slice(0,160);
+  const oauthErrorDescription=String(searchParams.get("error_description")||searchParams.get("errorDescription")||"").slice(0,300);
   try{
     const raw=await authClient.getSession();
     const rawKeys=raw&&typeof raw==="object"?Object.keys(raw):[];
@@ -158,17 +161,20 @@ async function bootstrapAuth(){
       view.page="login";
       if(returnedFromGoogle){
         const params=urlParams.length?urlParams.join(", "):"none";
-        renderLogin(`DIAGNOSTIC V29: Google returned. getSession() has no user. Response keys: ${rawKeys.join(", ")||"none"}. Data keys: ${dataKeys.join(", ")||"none"}. Session object: ${hasSessionObject?"yes":"no"}. Session token: ${hasSessionToken?"yes":"no"}. getJWTToken(): ${hasJwtMethod?"available":"missing"}. Return URL parameters: ${params}.`);
+        const oauthDetails=oauthError||oauthErrorDescription
+          ? ` OAuth error: ${oauthError||"(blank)"}. Description: ${oauthErrorDescription||"(none)"}.`
+          : "";
+        renderLogin(`DIAGNOSTIC V30: Google returned. getSession() has no user.${oauthDetails} Response keys: ${rawKeys.join(", ")||"none"}. Data keys: ${dataKeys.join(", ")||"none"}. Session object: ${hasSessionObject?"yes":"no"}. Session token: ${hasSessionToken?"yes":"no"}. getJWTToken(): ${hasJwtMethod?"available":"missing"}. Return URL parameters: ${params}.`);
       }else render();
       return;
     }
 
     const token=await getAuthToken();
-    if(!token)throw new Error(`DIAGNOSTIC V29: Neon session and user found, but no JWT was returned. Session token field: ${hasSessionToken?"present":"missing"}. getJWTToken(): ${hasJwtMethod?"available":"missing"}.`);
+    if(!token)throw new Error(`DIAGNOSTIC V30: Neon session and user found, but no JWT was returned. Session token field: ${hasSessionToken?"present":"missing"}. getJWTToken(): ${hasJwtMethod?"available":"missing"}.`);
     const jwtLike=token.split(".").length===3;
     const response=await fetch(`${API_BASE}/auth-test`,{headers:{Accept:"application/json",Authorization:`Bearer ${token}`},cache:"no-store"});
     const result=await response.json().catch(()=>({}));
-    if(!response.ok||!result.ok)throw new Error(`DIAGNOSTIC V29: User + JWT found (${jwtLike?"JWT-shaped":"not JWT-shaped"}), but Worker rejected it (${response.status}): ${result.error||result.message||"Unknown error"}`);
+    if(!response.ok||!result.ok)throw new Error(`DIAGNOSTIC V30: User + JWT found (${jwtLike?"JWT-shaped":"not JWT-shaped"}), but Worker rejected it (${response.status}): ${result.error||result.message||"Unknown error"}`);
 
     sessionStorage.removeItem("cattleAuthAttempt");
     authSession=data;
