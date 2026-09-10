@@ -759,8 +759,10 @@ function showCalfModal(cow,calf){
       render();
     };
 
-    document.getElementById("calfForm").onsubmit=e=>{
+    document.getElementById("calfForm").onsubmit=async e=>{
       e.preventDefault();
+      const form=e.currentTarget;
+      const submitBtn=form.querySelector('button[type="submit"]');
       const record={
         id:editing?calf.id:uid(),
         month:Number(document.getElementById("calfMonth").value),
@@ -770,11 +772,55 @@ function showCalfModal(cow,calf){
         dead:document.getElementById("calfDead").checked,
         notes:document.getElementById("calfNotes").value.trim()
       };
-      if(editing) Object.assign(calf,record);
-      else cow.calves.push(record);
-      saveState();
-      closeModal();
-      render();
+
+      // Editing is still local until the update/delete calf API is added.
+      if(editing){
+        Object.assign(calf,record);
+        saveState();
+        closeModal();
+        render();
+        return;
+      }
+
+      submitBtn.disabled=true;
+      submitBtn.textContent="Saving…";
+      try{
+        const response=await fetch(`${API_BASE}/api/calves`,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            cow_id:cow.id,
+            birth_month:record.month,
+            birth_year:record.year,
+            gender:record.gender||null,
+            color:record.color||null,
+            is_dead:record.dead,
+            notes:record.notes||null,
+            created_by:state.currentUser||null
+          })
+        });
+        const data=await response.json();
+        if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not save calf");
+        cow.calves.push({
+          id:data.calf.id,
+          month:Number(data.calf.birth_month),
+          year:Number(data.calf.birth_year),
+          gender:data.calf.gender||"",
+          color:data.calf.color||"",
+          dead:Boolean(data.calf.is_dead),
+          notes:data.calf.notes||"",
+          createdBy:data.calf.created_by||"",
+          createdAt:data.calf.created_at||null,
+          updatedAt:data.calf.updated_at||null
+        });
+        saveState();
+        closeModal();
+        render();
+      }catch(err){
+        alert(`Could not save calf to the shared database. ${err.message}`);
+        submitBtn.disabled=false;
+        submitBtn.textContent="Add calf";
+      }
     };
   });
 }
