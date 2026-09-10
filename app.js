@@ -240,7 +240,7 @@ function renderLogin(errorMessage=""){
       }catch(err){
         throw new Error(`WORKER AUTH TEST FAILED: ${err?.message||"Unknown error"}`);
       }
-      authSession=session;state.currentUser=authDisplayName(session);saveState();view.page="home";render();syncCowsFromNeon();
+      authSession=session;state.currentUser=authDisplayName(session);saveState();view.page="home";render();syncCowsFromNeon();syncMessagesFromNeon({rerender:false});
     }catch(err){console.error("Email sign in failed",err);renderLogin(`DIAGNOSTIC V34: ${err.message||"Could not sign in"}`);}
   };
 }
@@ -280,7 +280,7 @@ function renderResetPassword(token,message="",isError=false){
 }
 function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null,calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length,dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>
 <section class="home-ranch-scene" aria-hidden="true"></section>
-</main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render();syncCowsFromNeon()};document.getElementById("openChat").onclick=()=>{view.page="chat";render()};document.getElementById("menuBtn").onclick=showFarmMenu}
+</main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render();syncCowsFromNeon()};document.getElementById("openChat").onclick=()=>{view.page="chat";render();syncMessagesFromNeon()};document.getElementById("menuBtn").onclick=showFarmMenu}
 function renderCattle(){
   let cows=sortedCows(state.cows);
   if(view.ownerFilter)cows=cows.filter(c=>c.owner===view.ownerFilter);
@@ -543,8 +543,36 @@ function renderScorecard(){
   </main>`);
   document.getElementById("backCow").onclick=()=>{view.page="cow";render()}
 }
+let chatSyncInFlight=null;
+async function syncMessagesFromNeon({rerender=true}={}){
+  if(chatSyncInFlight)return chatSyncInFlight;
+  chatSyncInFlight=(async()=>{
+    try{
+      const response=await apiFetch("/api/messages",{headers:{Accept:"application/json"},cache:"no-store"});
+      const data=await response.json();
+      if(!response.ok||!data.ok||!Array.isArray(data.messages))throw new Error(data.error||data.message||"Could not load messages");
+      state.notes=data.messages.map(m=>({
+        id:m.id,
+        authUserId:m.auth_user_id||"",
+        user:m.display_name||"User",
+        timestamp:m.created_at,
+        text:m.message_text||"",
+        photo:m.photo_url||null,
+        shared:true
+      }));
+      saveState();
+      if(rerender&&view.page==="chat")renderChat();
+      else if(rerender&&view.page==="home")renderHome();
+      return true;
+    }catch(err){console.error("Could not sync Farm Chat from Neon",err);return false}
+    finally{chatSyncInFlight=null}
+  })();
+  return chatSyncInFlight;
+}
+
 function renderChat(){
   const notes=[...state.notes].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+  const media=notes.filter(n=>n.photo);
   usePage(`<main class="screen chat-screen">
     <header class="topbar chat-header">
       <div class="back-title">
@@ -554,14 +582,15 @@ function renderChat(){
           <h1 class="page-title">Farm Chat</h1>
         </div>
       </div>
+      <button class="soft chat-media-btn" id="openMedia" type="button">Media${media.length?` (${media.length})`:""}</button>
     </header>
 
     <section class="chat-list" id="chatList">
       ${notes.length?notes.map(n=>`<div class="message-row ${n.user===state.currentUser?"me":""}">
         <article class="message-bubble">
-          <div class="message-meta">${esc(n.user)} · ${formatDateTime(n.timestamp)}</div>
+          <div class="message-topline"><div class="message-meta">${esc(n.user)} · ${formatDateTime(n.timestamp)}</div><button class="message-menu-btn" type="button" data-message-menu="${attr(n.id)}" aria-label="Message options">•••</button></div>
           ${n.text?`<div class="message-text">${esc(n.text)}</div>`:""}
-          ${n.photo?`<button class="chat-photo-button" type="button" data-chat-photo="${attr(n.photo)}"><img src="${n.photo}" alt="Farm chat photo"></button>`:""}
+          ${n.photo?`<button class="chat-photo-button" type="button" data-chat-photo="${attr(n.photo)}"><img src="${attr(n.photo)}" alt="Farm chat photo"></button>`:""}
         </article>
       </div>`).join(""):`<div class="empty">No messages yet.</div>`}
     </section>
@@ -570,26 +599,46 @@ function renderChat(){
       <form id="chatForm" class="chat-compose-box">
         <textarea id="chatText" rows="2" maxlength="500" placeholder="Message"></textarea>
         <div class="composer-row">
-          <label class="photo-button">
-            <input id="chatPhoto" type="file" accept="image/*">
-            <span>📷 Photo</span>
-          </label>
-          <button class="primary small" type="submit">Send</button>
-        </div>
-        <div id="photoPreviewWrap" class="photo-preview-wrap hidden">
-          <img id="photoPreview" alt="Selected photo preview">
-          <button type="button" class="link-btn" id="removePhoto">Remove photo</button>
+          <button class="photo-button chat-photo-disabled" id="chatPhotoSoon" type="button"><span>📷 Photo</span></button>
+          <button class="primary small" id="chatSendBtn" type="submit">Send</button>
         </div>
       </form>
     </section>
   </main>`);
   document.getElementById("backHome").onclick=()=>{view.page="home";render()};
+  document.getElementById("openMedia").onclick=()=>showChatMedia(notes);
+  document.getElementById("chatPhotoSoon").onclick=()=>alert("Shared photo uploading is the next step. Text messages are already shared across the farm.");
   setupChatComposer();
-  document.querySelectorAll("[data-chat-photo]").forEach(btn=>{
-    btn.onclick=()=>openPhotoViewer(btn.dataset.chatPhoto);
-  });
+  document.querySelectorAll("[data-chat-photo]").forEach(btn=>{btn.onclick=()=>openPhotoViewer(btn.dataset.chatPhoto)});
+  document.querySelectorAll("[data-message-menu]").forEach(btn=>{btn.onclick=()=>showMessageMenu(btn.dataset.messageMenu)});
   const list=document.getElementById("chatList");
-  if(list) list.scrollTop=list.scrollHeight;
+  if(list)list.scrollTop=list.scrollHeight;
+}
+
+function showMessageMenu(messageId){
+  const message=state.notes.find(n=>String(n.id)===String(messageId));
+  if(!message)return;
+  openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Farm Chat</p><h2>Message options</h2></div><button class="icon-button" id="closeMessageMenu">×</button></div><button class="danger message-delete-action" id="deleteChatMessage">Delete message</button></div>`,()=>{
+    document.getElementById("closeMessageMenu").onclick=closeModal;
+    document.getElementById("deleteChatMessage").onclick=async()=>{
+      if(!confirm("Delete this message for everyone?"))return;
+      const btn=document.getElementById("deleteChatMessage");btn.disabled=true;btn.textContent="Deleting…";
+      try{
+        const response=await apiFetch(`/api/messages/${encodeURIComponent(messageId)}`,{method:"DELETE"});
+        const data=await response.json();
+        if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete message");
+        state.notes=state.notes.filter(n=>String(n.id)!==String(messageId));saveState();closeModal();renderChat();
+      }catch(err){alert(`Could not delete message. ${err.message}`);btn.disabled=false;btn.textContent="Delete message"}
+    };
+  });
+}
+
+function showChatMedia(notes=state.notes){
+  const media=[...notes].filter(n=>n.photo).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+  openModal(`<div class="modal-card media-modal"><div class="section-heading"><div><p class="eyebrow">Farm Chat</p><h2>Media</h2></div><button class="icon-button" id="closeMedia">×</button></div>${media.length?`<div class="media-grid">${media.map(n=>`<button type="button" class="media-thumb" data-media-photo="${attr(n.photo)}"><img src="${attr(n.photo)}" alt="Photo sent by ${attr(n.user)}"><span>${esc(n.user)} · ${shortDate(n.timestamp)}</span></button>`).join("")}</div>`:`<div class="empty media-empty"><strong>No shared photos yet.</strong><br>Photos will appear here after shared photo storage is connected.</div>`}</div>`,()=>{
+    document.getElementById("closeMedia").onclick=closeModal;
+    modalRoot.querySelectorAll("[data-media-photo]").forEach(btn=>btn.onclick=()=>openPhotoViewer(btn.dataset.mediaPhoto));
+  });
 }
 
 function openPhotoViewer(src){
@@ -676,7 +725,24 @@ function openPhotoViewer(src){
   });
 }
 
-function setupChatComposer(){const input=document.getElementById("chatPhoto"),wrap=document.getElementById("photoPreviewWrap"),img=document.getElementById("photoPreview");input.onchange=()=>{const f=input.files?.[0];if(!f)return;if(f.size>4*1024*1024){alert("For this prototype, choose an image under 4 MB.");input.value="";return}const r=new FileReader();r.onload=()=>{pendingPhoto=String(r.result);img.src=pendingPhoto;wrap.classList.remove("hidden")};r.readAsDataURL(f)};document.getElementById("removePhoto").onclick=()=>{pendingPhoto=null;input.value="";img.removeAttribute("src");wrap.classList.add("hidden")};document.getElementById("chatForm").onsubmit=e=>{e.preventDefault();const text=document.getElementById("chatText").value.trim();if(!text&&!pendingPhoto)return;state.notes.push({id:uid(),user:state.currentUser,timestamp:new Date().toISOString(),text,photo:pendingPhoto});pendingPhoto=null;saveState();render()}}
+function setupChatComposer(){
+  const form=document.getElementById("chatForm"),input=document.getElementById("chatText"),btn=document.getElementById("chatSendBtn");
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const text=input.value.trim();
+    if(!text)return;
+    btn.disabled=true;btn.textContent="Sending…";
+    try{
+      const response=await apiFetch("/api/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message_text:text})});
+      const data=await response.json();
+      if(!response.ok||!data.ok||!data.message)throw new Error(data.error||data.message||"Could not send message");
+      const m=data.message;
+      state.notes.push({id:m.id,authUserId:m.auth_user_id||"",user:m.display_name||state.currentUser||"User",timestamp:m.created_at,text:m.message_text||text,photo:m.photo_url||null,shared:true});
+      saveState();renderChat();
+    }catch(err){alert(`Could not send message. ${err.message}`);btn.disabled=false;btn.textContent="Send"}
+  };
+}
+
 function openModal(html,onReady){modalRoot.innerHTML=`<div class="modal-backdrop"><section class="modal">${html}</section></div>`;const b=modalRoot.querySelector(".modal-backdrop");b.onclick=e=>{if(e.target===b)closeModal()};onReady?.()}
 function closeModal(){modalRoot.innerHTML=""}
 function showOwnersModal(){const owners=state.owners.map(o=>o.name).filter(Boolean).sort((a,b)=>a.localeCompare(b));openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Filter cattle</p><h2>Owners</h2></div><button class="icon-button" id="closeModal">×</button></div><div class="owner-list">${owners.length?owners.map(o=>`<button class="owner-choice" data-owner="${attr(o)}">${esc(o)}</button>`).join(""):`<div class="empty">No owners yet.</div>`}</div></div>`,()=>{document.getElementById("closeModal").onclick=closeModal;modalRoot.querySelectorAll("[data-owner]").forEach(b=>b.onclick=()=>{view.ownerFilter=b.dataset.owner;closeModal();render()})})}
