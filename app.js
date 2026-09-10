@@ -22,6 +22,39 @@ let pendingPhoto=null;
 const app=document.getElementById("app"),modalRoot=document.getElementById("modalRoot");
 function loadState(){try{const raw=localStorage.getItem(STORAGE_KEY);if(raw)return JSON.parse(raw)}catch{}return JSON.parse(JSON.stringify(initialData))}
 function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}
+let cattleSyncInFlight=null;
+async function syncCowsFromNeon({rerender=true}={}){
+  if(cattleSyncInFlight)return cattleSyncInFlight;
+  cattleSyncInFlight=(async()=>{
+    try{
+      const response=await fetch(`${API_BASE}/api/cows`,{headers:{Accept:"application/json"},cache:"no-store"});
+      const data=await response.json();
+      if(!response.ok||!data.ok||!Array.isArray(data.cows))throw new Error(data.error||data.message||"Could not load cattle");
+      const localById=new Map(state.cows.map(c=>[String(c.id),c]));
+      const localByBrand=new Map(state.cows.map(c=>[String(c.brand).trim().toLowerCase(),c]));
+      state.cows=data.cows.map(dbCow=>{
+        const local=localById.get(String(dbCow.id))||localByBrand.get(String(dbCow.brand_number).trim().toLowerCase());
+        return{
+          id:dbCow.id,
+          brand:String(dbCow.brand_number),
+          owner:local?.owner||"",
+          calves:Array.isArray(local?.calves)?local.calves:[],
+          notes:dbCow.notes??local?.notes??"",
+          createdBy:dbCow.created_by||local?.createdBy||"",
+          createdAt:dbCow.created_at||local?.createdAt||null,
+          updatedAt:dbCow.updated_at||local?.updatedAt||null
+        };
+      });
+      saveState();
+      if(rerender&&view.page!=="login")render();
+      return true;
+    }catch(err){
+      console.error("Could not sync cattle from Neon",err);
+      return false;
+    }finally{cattleSyncInFlight=null}
+  })();
+  return cattleSyncInFlight;
+}
 function currentYear(){return new Date().getFullYear()}
 function monthName(m){return new Intl.DateTimeFormat("en",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
 function fullMonthName(m){return new Intl.DateTimeFormat("en",{month:"long",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
@@ -45,7 +78,7 @@ function render(){if(view.page==="login")return renderLogin();if(view.page==="ca
 function renderLogin(){usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Enter your username to open the shared farm records.</p><form id="loginForm" class="stack"><label><span>Username</span><input id="usernameInput" maxlength="40" required placeholder="Your name"></label><button class="primary" type="submit">Continue</button></form></section></main>`);document.getElementById("loginForm").addEventListener("submit",e=>{e.preventDefault();const u=document.getElementById("usernameInput").value.trim();if(!u)return;state.currentUser=u;saveState();view.page="home";render()})}
 function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null,calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length,dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>
 <section class="home-ranch-scene" aria-hidden="true"></section>
-</main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render()};document.getElementById("openChat").onclick=()=>{view.page="chat";render()};document.getElementById("menuBtn").onclick=showFarmMenu}
+</main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render();syncCowsFromNeon()};document.getElementById("openChat").onclick=()=>{view.page="chat";render()};document.getElementById("menuBtn").onclick=showFarmMenu}
 function renderCattle(){
   let cows=sortedCows(state.cows);
   if(view.ownerFilter)cows=cows.filter(c=>c.owner===view.ownerFilter);
@@ -776,7 +809,7 @@ function showNeverCalvedModal(){
 function showFarmMenu(){openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="farmProfile">Farm profile</button><button class="soft" id="logout">Log out</button></div></div>`,()=>{document.getElementById("closeMenu").onclick=closeModal;document.getElementById("farmProfile").onclick=showFarmProfile;document.getElementById("logout").onclick=()=>{state.currentUser="";saveState();closeModal();view.page="login";render()}})}
 function showFarmProfile(){openModal(`<form class="modal-card" id="farmProfileForm"><p class="eyebrow">Settings</p><h2>Farm profile</h2><div class="stack"><label><span>Farm name</span><input id="farmNameInput" maxlength="100" value="${attr(state.farmName||"")}"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelFarm">Cancel</button><button type="submit" class="primary">Save</button></div></form>`,()=>{document.getElementById("cancelFarm").onclick=closeModal;document.getElementById("farmProfileForm").onsubmit=e=>{e.preventDefault();state.farmName=document.getElementById("farmNameInput").value.trim()||"Cattle Records";saveState();closeModal();render()}})}
 function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Options</h2><div class="menu-list" style="margin-top:14px"><button class="danger" id="deleteCow">Delete cow</button><button class="soft" id="closeCowMenu">Cancel</button></div></div>`,()=>{document.getElementById("closeCowMenu").onclick=closeModal;document.getElementById("deleteCow").onclick=()=>{if(!confirm(`Delete cow ${cow.brand} and all calf records?`))return;state.cows=state.cows.filter(c=>c.id!==cow.id);saveState();closeModal();view.page="cattle";render()}})}
-try{render()}catch(err){
+try{render();if(state.currentUser)syncCowsFromNeon()}catch(err){
   console.error(err);
   const a=document.getElementById("app");
   if(a)a.innerHTML='<main class="screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h2>App could not start</h2><p class="muted">Please refresh the page. If this message remains, send a screenshot.</p></section></main>';
