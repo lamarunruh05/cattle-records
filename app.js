@@ -139,16 +139,36 @@ async function testWorkerAuth(){
 }
 async function bootstrapAuth(){
   render();
+  const returnedFromGoogle=sessionStorage.getItem("cattleAuthAttempt")==="google";
   try{
     const session=await getAuthSession();
     if(!session?.user){
       state.currentUser="";
       saveState();
       view.page="login";
-      render();
+      if(returnedFromGoogle){
+        renderLogin("DIAGNOSTIC: Google returned to Cattle Records, but Neon Auth did not restore a signed-in session.");
+      }else{
+        render();
+      }
       return;
     }
-    await testWorkerAuth();
+
+    const token=await getAuthToken();
+    if(!token){
+      throw new Error("DIAGNOSTIC: Neon session found, but no JWT was returned.");
+    }
+
+    const response=await fetch(`${API_BASE}/auth-test`,{
+      headers:{Accept:"application/json",Authorization:`Bearer ${token}`},
+      cache:"no-store"
+    });
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||!data.ok){
+      throw new Error(`DIAGNOSTIC: Session and JWT found, but Worker rejected it (${response.status}): ${data.error||data.message||"Unknown error"}`);
+    }
+
+    sessionStorage.removeItem("cattleAuthAttempt");
     authSession=session;
     state.currentUser=authDisplayName(session);
     saveState();
@@ -161,7 +181,7 @@ async function bootstrapAuth(){
     state.currentUser="";
     saveState();
     view.page="login";
-    renderLogin(err.message||"Could not verify authentication");
+    renderLogin(err.message||"DIAGNOSTIC: Could not verify authentication.");
   }
 }
 function currentYear(){return new Date().getFullYear()}
@@ -193,6 +213,7 @@ function renderLogin(errorMessage=""){
     btn.textContent="Opening Google…";
     try{
       const callbackURL=`${window.location.origin}${window.location.pathname}`;
+      sessionStorage.setItem("cattleAuthAttempt","google");
       const result=await authClient.signIn.social({provider:"google",callbackURL});
       if(result?.error)throw new Error(result.error.message||"Google sign in failed");
     }catch(err){
