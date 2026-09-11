@@ -497,10 +497,11 @@ async function acceptFarmInvite(token,info,displayName){
     clearInviteFromUrl();
     adminAccess=null;adminLoaded=false;farmMembers=[];farmInvites=[];
     await probeAdminAccess();
-    view.page="home";
+    let pendingChat=false;
+    try{pendingChat=sessionStorage.getItem("openFarmChatAfterLogin")==="1";if(pendingChat)sessionStorage.removeItem("openFarmChatAfterLogin")}catch{}
+    view.page=(openTarget==="chat"||pendingChat)?"chat":"home";
     render();
-    syncCowsFromNeon();
-    syncMessagesFromNeon({rerender:false});
+    if(view.page==="chat"){syncMessagesFromNeon()}else{syncCowsFromNeon();syncMessagesFromNeon({rerender:false})}
   }catch(err){
     renderInviteJoin(token,info,err?.message||"Could not join farm",true);
   }
@@ -523,6 +524,8 @@ async function bootstrapAuth(){
   const url=new URL(window.location.href);
   const inviteToken=String(url.searchParams.get("invite")||"").trim();
   if(inviteToken){await bootstrapInvite(inviteToken);return;}
+  const openTarget=String(url.searchParams.get("open")||"").trim().toLowerCase();
+  if(url.searchParams.has("open")){url.searchParams.delete("open");history.replaceState({},"",url.pathname+(url.searchParams.toString()?`?${url.searchParams}`:"")+url.hash)}
   const resetToken=url.searchParams.get("token");
   const resetMode=url.searchParams.get("reset")==="1";
   const resetError=resetMode?url.searchParams.get("error"):null;
@@ -1669,6 +1672,112 @@ function showNeverCalvedModal(){
     });
   });
 }
+
+function pushNotificationsSupported(){
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+function urlBase64ToUint8Array(base64String){
+  const padding="=".repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding).replace(/-/g,"+").replace(/_/g,"/");
+  const raw=atob(base64);
+  return Uint8Array.from([...raw].map(ch=>ch.charCodeAt(0)));
+}
+async function getPushRegistration(){
+  if(!pushNotificationsSupported())throw new Error("Push notifications are not supported on this device/browser.");
+  return navigator.serviceWorker.ready;
+}
+async function enablePushNotifications(){
+  const registration=await getPushRegistration();
+  let permission=Notification.permission;
+  if(permission!=="granted")permission=await Notification.requestPermission();
+  if(permission!=="granted")throw new Error(permission==="denied"?"Notifications are blocked for Cattle Records. Enable them in your phone/browser settings first.":"Notification permission was not granted.");
+
+  let subscription=await registration.pushManager.getSubscription();
+  if(!subscription){
+    const keyResponse=await apiFetch("/api/push/public-key",{headers:{Accept:"application/json"},cache:"no-store"});
+    const keyData=await keyResponse.json().catch(()=>({}));
+    if(!keyResponse.ok||!keyData.ok||!keyData.public_key)throw new Error(keyData.error||keyData.message||"Could not load notification key");
+    subscription=await registration.pushManager.subscribe({
+      userVisibleOnly:true,
+      applicationServerKey:urlBase64ToUint8Array(keyData.public_key)
+    });
+  }
+
+  const response=await apiFetch("/api/push/subscribe",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({subscription:subscription.toJSON()})
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok){
+    try{await subscription.unsubscribe()}catch{}
+    throw new Error(data.error||data.message||"Could not register notifications");
+  }
+  return true;
+}
+async function disablePushNotifications(){
+  const registration=await getPushRegistration();
+  const subscription=await registration.pushManager.getSubscription();
+  if(!subscription)return true;
+  try{
+    await apiFetch("/api/push/subscribe",{
+      method:"DELETE",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({endpoint:subscription.endpoint})
+    });
+  }catch(err){console.warn("Could not remove push subscription from server",err)}
+  await subscription.unsubscribe();
+  return true;
+}
+async function showNotificationSettingsModal(){
+  if(!pushNotificationsSupported()){
+    openModal(`<div class="modal-card"><p class="eyebrow">Farm Chat</p><h2>Notifications</h2><p class="muted">Push notifications are not supported by this browser. On Android, use the installed Cattle Records app or Chrome.</p><div class="modal-actions"><button class="soft" id="closeNotifications" type="button">Close</button></div></div>`,()=>{document.getElementById("closeNotifications").onclick=closeModal});
+    return;
+  }
+  try{
+    const registration=await getPushRegistration();
+    const subscription=await registration.pushManager.getSubscription();
+    const permission=Notification.permission;
+    const enabled=permission==="granted"&&!!subscription;
+    const status=enabled?"Enabled":permission==="denied"?"Blocked on this device":"Off";
+    const detail=enabled?"This device will receive Farm Chat notifications when another farm user sends a message or photo.":permission==="denied"?"Notifications are blocked in your phone/browser settings. Allow notifications for Cattle Records there, then come back here.":"Enable notifications to be alerted when another farm user sends something in Farm Chat.";
+    openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Farm Chat</p><h2>Notifications</h2></div><button class="icon-button" id="closeNotifications" type="button">×</button></div><div class="invite-role"><span>This device</span><strong>${esc(status)}</strong></div><p class="muted admin-modal-copy">${esc(detail)}</p><div class="modal-actions"><button class="soft" id="cancelNotifications" type="button">Close</button>${enabled?'<button class="danger" id="toggleNotifications" type="button">Turn off</button>':permission!=="denied"?'<button class="primary" id="toggleNotifications" type="button">Enable notifications</button>':''}</div></div>`,()=>{
+      document.getElementById("closeNotifications").onclick=closeModal;
+      document.getElementById("cancelNotifications").onclick=closeModal;
+      const toggle=document.getElementById("toggleNotifications");
+      if(toggle)toggle.onclick=async()=>{
+        toggle.disabled=true;
+        toggle.textContent=enabled?"Turning off…":"Enabling…";
+        try{
+          if(enabled)await disablePushNotifications();else await enablePushNotifications();
+          closeModal();
+          await showNotificationSettingsModal();
+        }catch(err){
+          alert(`Could not change notification settings. ${err.message}`);
+          toggle.disabled=false;
+          toggle.textContent=enabled?"Turn off":"Enable notifications";
+        }
+      };
+    });
+  }catch(err){
+    alert(`Could not check notification settings. ${err.message}`);
+  }
+}
+function openFarmChatFromNotification(){
+  if(!authSession?.user){
+    try{sessionStorage.setItem("openFarmChatAfterLogin","1")}catch{}
+    return;
+  }
+  closeModal();
+  view.page="chat";
+  render();
+  syncMessagesFromNeon();
+}
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.addEventListener("message",event=>{
+    if(event.data?.type==="OPEN_CHAT")openFarmChatFromNotification();
+  });
+}
 async function installPwa(){
   if(isStandalone()){alert("Cattle Records is already installed on this device.");return;}
   if(deferredInstallPrompt){
@@ -1691,7 +1800,7 @@ async function installPwa(){
 function registerServiceWorker(){
   if(!("serviceWorker" in navigator))return;
   window.addEventListener("load",()=>{
-    navigator.serviceWorker.register("./service-worker.js?v=46",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
+    navigator.serviceWorker.register("./service-worker.js?v=48",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
   });
 }
 registerServiceWorker();
@@ -1855,11 +1964,12 @@ function setupAutoSync(){
 
 function showFarmMenu(){
   const usersButton=adminAccess===true?'<button class="soft" id="farmUsers">Farm users</button>':'';
-  openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="activityLog">Activity</button>${usersButton}<button class="soft" id="farmProfile">Farm profile</button>${!isStandalone()?'<button class="soft" id="installApp">Install app</button>':''}<button class="soft" id="logout">Log out</button></div></div>`,()=>{
+  openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="activityLog">Activity</button>${usersButton}<button class="soft" id="farmProfile">Farm profile</button><button class="soft" id="notificationsSettings">Notifications</button>${!isStandalone()?'<button class="soft" id="installApp">Install app</button>':''}<button class="soft" id="logout">Log out</button></div></div>`,()=>{
     document.getElementById("closeMenu").onclick=closeModal;
     document.getElementById("activityLog").onclick=()=>{closeModal();view.page="activity";activityLoaded=false;activityError="";render();syncActivityFromNeon()};
     const usersBtn=document.getElementById("farmUsers");if(usersBtn)usersBtn.onclick=()=>{closeModal();view.page="adminUsers";adminLoaded=false;adminError="";render();syncAdminFromNeon()};
     document.getElementById("farmProfile").onclick=showFarmProfile;
+    document.getElementById("notificationsSettings").onclick=async()=>{closeModal();await showNotificationSettingsModal()};
     const installBtn=document.getElementById("installApp");if(installBtn)installBtn.onclick=async()=>{closeModal();await installPwa()};
     document.getElementById("logout").onclick=async()=>{const btn=document.getElementById("logout");btn.disabled=true;btn.textContent="Logging out…";try{await authClient.signOut()}catch(err){console.error("Neon Auth sign out failed",err)}authSession=null;adminAccess=null;farmMembers=[];farmInvites=[];state.currentUser="";saveState();closeModal();view.page="login";render()};
   });

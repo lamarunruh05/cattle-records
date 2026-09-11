@@ -1,9 +1,9 @@
-const CACHE_NAME="cattle-records-shell-v47";
+const CACHE_NAME="cattle-records-shell-v48";
 const SHELL=[
   "./index.html",
-  "./styles.css?v=47",
-  "./app.js?v=47",
-  "./manifest.webmanifest?v=47",
+  "./styles.css?v=48",
+  "./app.js?v=48",
+  "./manifest.webmanifest?v=48",
   "./ranch-scene.jpg",
   "./icon-192.png",
   "./icon-512.png",
@@ -64,4 +64,39 @@ self.addEventListener("fetch",event=>{
       })
       .catch(()=>caches.match(request))
   );
+});
+
+
+self.addEventListener("push",event=>{
+  let data={};
+  try{data=event.data?event.data.json():{}}catch{data={body:event.data?event.data.text():"New Farm Chat message"}}
+  const title=data.title||"Farm Chat";
+  const options={
+    body:data.body||"New message in Farm Chat",
+    tag:data.tag||"farm-chat",
+    icon:"./icon-192.png",
+    badge:"./icon-192.png",
+    data:data.data||{url:"/cattle-records/?open=chat"},
+    renotify:true
+  };
+  event.waitUntil(self.registration.showNotification(title,options));
+});
+
+self.addEventListener("notificationclick",event=>{
+  event.notification.close();
+  const target=event.notification?.data?.url||"/cattle-records/?open=chat";
+  event.waitUntil((async()=>{
+    const windows=await clients.matchAll({type:"window",includeUncontrolled:true});
+    for(const client of windows){
+      try{
+        const u=new URL(client.url);
+        if(u.origin===self.location.origin){
+          await client.focus();
+          client.postMessage({type:"OPEN_CHAT"});
+          return;
+        }
+      }catch{}
+    }
+    if(clients.openWindow)await clients.openWindow(target);
+  })());
 });
