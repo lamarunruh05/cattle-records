@@ -26,6 +26,10 @@ let state=loadState();
 if(!Array.isArray(state.owners))state.owners=[];
 let view={page:"login",cowId:null,ownerFilter:"",search:""};
 let pendingPhoto=null;
+let activityEntries=[];
+let activityLoaded=false;
+let activityError="";
+let activitySyncInFlight=null;
 const chatPhotoUrls=new Map();
 const chatPhotoLoads=new Map();
 const app=document.getElementById("app"),modalRoot=document.getElementById("modalRoot");
@@ -143,6 +147,38 @@ async function apiFetch(path,options={}){
   headers.set("Authorization",`Bearer ${token}`);
   if(!headers.has("Accept"))headers.set("Accept","application/json");
   return fetch(`${API_BASE}${path}`,{...options,headers});
+}
+async function syncActivityFromNeon({rerender=true}={}){
+  if(activitySyncInFlight)return activitySyncInFlight;
+  activityError="";
+  activitySyncInFlight=(async()=>{
+    try{
+      const response=await apiFetch("/api/activity",{headers:{Accept:"application/json"},cache:"no-store"});
+      const data=await response.json();
+      if(!response.ok||!data.ok||!Array.isArray(data.activity))throw new Error(data.error||data.message||"Could not load activity");
+      activityEntries=data.activity.map(item=>({
+        id:item.id,
+        user:item.display_name||"User",
+        entityType:item.entity_type||"record",
+        entityId:item.entity_id||null,
+        action:item.action||"updated",
+        description:item.description||"Farm record changed",
+        details:item.details||null,
+        createdAt:item.created_at
+      }));
+      activityLoaded=true;
+      activityError="";
+      if(rerender&&view.page==="activity")renderActivity();
+      return true;
+    }catch(err){
+      console.error("Could not sync activity from Neon",err);
+      activityLoaded=true;
+      activityError=err?.message||"Could not load activity";
+      if(rerender&&view.page==="activity")renderActivity();
+      return false;
+    }finally{activitySyncInFlight=null}
+  })();
+  return activitySyncInFlight;
 }
 function releaseChatPhotoUrl(messageId){
   const id=String(messageId);
@@ -296,7 +332,7 @@ function usePage(html){
   app.innerHTML=html;
   modalRoot.innerHTML="";
 }
-function render(){if(view.page==="login")return renderLogin();if(view.page==="forgotPassword")return renderForgotPassword();if(view.page==="resetPassword")return renderResetPassword(new URLSearchParams(window.location.search).get("token")||"");if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();return renderHome()}
+function render(){if(view.page==="login")return renderLogin();if(view.page==="forgotPassword")return renderForgotPassword();if(view.page==="resetPassword")return renderResetPassword(new URLSearchParams(window.location.search).get("token")||"");if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();if(view.page==="activity")return renderActivity();return renderHome()}
 function renderLogin(errorMessage=""){
   usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with your farm account.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<form class="stack" id="emailLoginForm"><label class="field"><span>Email</span><input id="loginEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><label class="field"><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Password"></label><button class="primary" id="emailLoginBtn" type="submit">Sign in</button><button class="auth-link" id="forgotPasswordBtn" type="button">Forgot password?</button></form></section></main>`);
   document.getElementById("forgotPasswordBtn").onclick=()=>{view.page="forgotPassword";render()};
@@ -367,6 +403,37 @@ function renderResetPassword(token,message="",isError=false){
 function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null,calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length,dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>
 <section class="home-ranch-scene" aria-hidden="true"></section>
 </main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render();syncCowsFromNeon()};document.getElementById("openChat").onclick=()=>{view.page="chat";render();syncMessagesFromNeon()};document.getElementById("menuBtn").onclick=showFarmMenu}
+function activityIcon(type){return type==="cow"?"🐄":type==="calf"?"🐮":type==="owner"?"👤":"•"}
+function activityActionLabel(action){return action==="created"?"Added":action==="deleted"?"Deleted":"Updated"}
+function renderActivity(){
+  const rows=activityEntries.map(item=>`<article class="activity-item activity-${attr(item.action)}">
+    <div class="activity-icon" aria-hidden="true">${activityIcon(item.entityType)}</div>
+    <div class="activity-copy">
+      <div class="activity-description">${esc(item.description)}</div>
+      <div class="activity-meta"><span>${esc(activityActionLabel(item.action))} ${esc(item.entityType)}</span><span>·</span><time datetime="${attr(item.createdAt||"")}">${item.createdAt?esc(formatDateTime(item.createdAt)):"Unknown time"}</time></div>
+    </div>
+  </article>`).join("");
+  usePage(`<main class="screen activity-screen">
+    <header class="topbar">
+      <div class="back-title">
+        <button class="icon-button" id="backActivity">←</button>
+        <div><p class="eyebrow">${esc(state.farmName||"Farm")}</p><h1 class="page-title">Activity</h1></div>
+      </div>
+      <button class="soft small" id="refreshActivity" type="button">Refresh</button>
+    </header>
+    <p class="activity-intro">Cattle record changes made by farm users.</p>
+    <section class="activity-list">
+      ${!activityLoaded?`<div class="activity-status"><span class="activity-spinner" aria-hidden="true"></span><span>Loading activity…</span></div>`:activityError?`<div class="empty activity-error"><strong>Could not load activity.</strong><br>${esc(activityError)}</div>`:rows||`<div class="empty"><strong>No activity yet.</strong><br>New cattle, calf, and owner changes will appear here.</div>`}
+    </section>
+  </main>`);
+  document.getElementById("backActivity").onclick=()=>{view.page="home";render()};
+  document.getElementById("refreshActivity").onclick=async()=>{
+    const btn=document.getElementById("refreshActivity");
+    btn.disabled=true;btn.textContent="Refreshing…";
+    await syncActivityFromNeon();
+  };
+}
+
 function renderCattle(){
   let cows=sortedCows(state.cows);
   if(view.ownerFilter)cows=cows.filter(c=>c.owner===view.ownerFilter);
@@ -1337,7 +1404,7 @@ function showNeverCalvedModal(){
     });
   });
 }
-function showFarmMenu(){openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="farmProfile">Farm profile</button><button class="soft" id="logout">Log out</button></div></div>`,()=>{document.getElementById("closeMenu").onclick=closeModal;document.getElementById("farmProfile").onclick=showFarmProfile;document.getElementById("logout").onclick=async()=>{const btn=document.getElementById("logout");btn.disabled=true;btn.textContent="Logging out…";try{await authClient.signOut()}catch(err){console.error("Neon Auth sign out failed",err)}authSession=null;state.currentUser="";saveState();closeModal();view.page="login";render()}})}
+function showFarmMenu(){openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="activityLog">Activity</button><button class="soft" id="farmProfile">Farm profile</button><button class="soft" id="logout">Log out</button></div></div>`,()=>{document.getElementById("closeMenu").onclick=closeModal;document.getElementById("activityLog").onclick=()=>{closeModal();view.page="activity";activityLoaded=false;activityError="";render();syncActivityFromNeon()};document.getElementById("farmProfile").onclick=showFarmProfile;document.getElementById("logout").onclick=async()=>{const btn=document.getElementById("logout");btn.disabled=true;btn.textContent="Logging out…";try{await authClient.signOut()}catch(err){console.error("Neon Auth sign out failed",err)}authSession=null;state.currentUser="";saveState();closeModal();view.page="login";render()}})}
 function showFarmProfile(){openModal(`<form class="modal-card" id="farmProfileForm"><p class="eyebrow">Settings</p><h2>Farm profile</h2><div class="stack"><label><span>Farm name</span><input id="farmNameInput" maxlength="100" value="${attr(state.farmName||"")}"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelFarm">Cancel</button><button type="submit" class="primary">Save</button></div></form>`,()=>{document.getElementById("cancelFarm").onclick=closeModal;document.getElementById("farmProfileForm").onsubmit=e=>{e.preventDefault();state.farmName=document.getElementById("farmNameInput").value.trim()||"Cattle Records";saveState();closeModal();render()}})}
 function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Options</h2><div class="menu-list" style="margin-top:14px"><button class="soft" id="editCow">Edit brand number</button><button class="danger" id="deleteCow">Delete cow</button><button class="soft" id="closeCowMenu">Cancel</button></div></div>`,()=>{
   document.getElementById("closeCowMenu").onclick=closeModal;
