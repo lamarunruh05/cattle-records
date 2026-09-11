@@ -1451,7 +1451,7 @@ async function installPwa(){
 function registerServiceWorker(){
   if(!("serviceWorker" in navigator))return;
   window.addEventListener("load",()=>{
-    navigator.serviceWorker.register("./service-worker.js").catch(err=>console.error("Service worker registration failed",err));
+    navigator.serviceWorker.register("./service-worker.js",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
   });
 }
 registerServiceWorker();

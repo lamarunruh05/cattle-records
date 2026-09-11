@@ -1,10 +1,9 @@
-const CACHE_NAME="cattle-records-shell-v42";
+const CACHE_NAME="cattle-records-shell-v43";
 const SHELL=[
-  "./",
   "./index.html",
-  "./styles.css?v=42",
-  "./app.js?v=42",
-  "./manifest.webmanifest?v=42",
+  "./styles.css?v=43",
+  "./app.js?v=43",
+  "./manifest.webmanifest?v=43",
   "./ranch-scene.jpg",
   "./icon-192.png",
   "./icon-512.png",
@@ -12,11 +11,21 @@ const SHELL=[
 ];
 
 self.addEventListener("install",event=>{
-  event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting()));
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache=>cache.addAll(SHELL))
+      .then(()=>self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate",event=>{
-  event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE_NAME&&key.startsWith("cattle-records-shell-")).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));
+  event.waitUntil(
+    caches.keys()
+      .then(keys=>Promise.all(keys
+        .filter(key=>key!==CACHE_NAME&&key.startsWith("cattle-records-shell-"))
+        .map(key=>caches.delete(key))))
+      .then(()=>self.clients.claim())
+  );
 });
 
 self.addEventListener("fetch",event=>{
@@ -25,19 +34,34 @@ self.addEventListener("fetch",event=>{
   const url=new URL(request.url);
   if(url.origin!==self.location.origin)return;
 
-  // Network-first keeps GitHub Pages updates fresh, with cache only as a fallback.
-  if(request.mode==="navigate"||/\.(?:html|js|css|webmanifest)$/.test(url.pathname)){
-    event.respondWith(fetch(request).then(response=>{
-      const copy=response.clone();
-      caches.open(CACHE_NAME).then(cache=>cache.put(request,copy));
-      return response;
-    }).catch(async()=>await caches.match(request)||await caches.match("./index.html")));
+  // Only page navigations may fall back to index.html.
+  // Never return HTML for a JavaScript/CSS request.
+  if(request.mode==="navigate"){
+    event.respondWith(
+      fetch(request)
+        .then(response=>{
+          if(response.ok){
+            const copy=response.clone();
+            caches.open(CACHE_NAME).then(cache=>cache.put("./index.html",copy));
+          }
+          return response;
+        })
+        .catch(()=>caches.match("./index.html"))
+    );
     return;
   }
 
-  event.respondWith(caches.match(request).then(cached=>cached||fetch(request).then(response=>{
-    const copy=response.clone();
-    caches.open(CACHE_NAME).then(cache=>cache.put(request,copy));
-    return response;
-  })));
+  // Versioned app assets are network-first and fall back only to the
+  // matching cached asset, never to the HTML shell.
+  event.respondWith(
+    fetch(request)
+      .then(response=>{
+        if(response.ok){
+          const copy=response.clone();
+          caches.open(CACHE_NAME).then(cache=>cache.put(request,copy));
+        }
+        return response;
+      })
+      .catch(()=>caches.match(request))
+  );
 });
