@@ -37,6 +37,17 @@ let activityEntries=[];
 let activityLoaded=false;
 let activityError="";
 let activitySyncInFlight=null;
+let farmAdminAccess=null;
+let adminMembers=[];
+let adminInvites=[];
+let adminCurrentUserId="";
+let adminLoaded=false;
+let adminError="";
+let adminSyncInFlight=null;
+let inviteToken="";
+let inviteInfo=null;
+let inviteError="";
+let inviteMode="signup";
 const chatPhotoUrls=new Map();
 const chatPhotoLoads=new Map();
 const app=document.getElementById("app"),modalRoot=document.getElementById("modalRoot");
@@ -187,6 +198,112 @@ async function syncActivityFromNeon({rerender=true}={}){
   })();
   return activitySyncInFlight;
 }
+
+async function probeAdminAccess(){
+  try{
+    const response=await apiFetch("/api/members",{cache:"no-store"});
+    if(response.status===403){farmAdminAccess=false;return false;}
+    const data=await response.json();
+    if(!response.ok||!data.ok||!Array.isArray(data.members))throw new Error(data.error||data.message||"Could not check admin access");
+    farmAdminAccess=true;
+    adminMembers=data.members;
+    adminCurrentUserId=String(data.current_user_id||"");
+    return true;
+  }catch(err){
+    console.error("Could not check admin access",err);
+    return null;
+  }
+}
+async function syncAdminFromNeon({rerender=true}={}){
+  if(adminSyncInFlight)return adminSyncInFlight;
+  adminSyncInFlight=(async()=>{
+    adminError="";
+    try{
+      const [membersResponse,invitesResponse]=await Promise.all([
+        apiFetch("/api/members",{cache:"no-store"}),
+        apiFetch("/api/invites",{cache:"no-store"})
+      ]);
+      const [membersData,invitesData]=await Promise.all([
+        membersResponse.json().catch(()=>({})),
+        invitesResponse.json().catch(()=>({}))
+      ]);
+      if(membersResponse.status===403||invitesResponse.status===403){
+        farmAdminAccess=false;
+        throw new Error("Admin access required");
+      }
+      if(!membersResponse.ok||!membersData.ok||!Array.isArray(membersData.members))throw new Error(membersData.error||membersData.message||"Could not load farm users");
+      if(!invitesResponse.ok||!invitesData.ok||!Array.isArray(invitesData.invites))throw new Error(invitesData.error||invitesData.message||"Could not load invites");
+      farmAdminAccess=true;
+      adminMembers=membersData.members;
+      adminCurrentUserId=String(membersData.current_user_id||"");
+      adminInvites=invitesData.invites;
+      adminLoaded=true;
+      if(rerender&&view.page==="admin")renderAdmin();
+      return true;
+    }catch(err){
+      console.error("Could not sync admin settings",err);
+      adminLoaded=true;
+      adminError=err?.message||"Could not load admin settings";
+      if(rerender&&view.page==="admin")renderAdmin();
+      return false;
+    }finally{adminSyncInFlight=null;}
+  })();
+  return adminSyncInFlight;
+}
+function buildInviteLink(token){
+  const url=new URL(window.location.origin+window.location.pathname);
+  url.searchParams.set("invite",String(token||""));
+  return url.toString();
+}
+async function copyText(text){
+  try{await navigator.clipboard.writeText(text);return true;}
+  catch{
+    const input=document.createElement("textarea");
+    input.value=text;input.setAttribute("readonly","");input.style.position="fixed";input.style.opacity="0";
+    document.body.appendChild(input);input.select();
+    const ok=document.execCommand?.("copy")||false;input.remove();return ok;
+  }
+}
+async function shareInvite(invite){
+  const link=buildInviteLink(invite.token);
+  if(navigator.share){
+    try{await navigator.share({title:`Join ${state.farmName||"our farm"}`,text:`You've been invited to join ${state.farmName||"our farm"} in Cattle Records.`,url:link});return;}
+    catch(err){if(err?.name==="AbortError")return;}
+  }
+  const copied=await copyText(link);
+  alert(copied?"Invite link copied.":`Copy this invite link:\n${link}`);
+}
+async function fetchInviteInfo(token){
+  const response=await fetch(`${API_BASE}/invite-info?token=${encodeURIComponent(token)}`,{headers:{Accept:"application/json"},cache:"no-store"});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok||!data.invite)throw new Error(data.error||data.message||"Could not load this invite");
+  return data.invite;
+}
+async function acceptFarmInvite(session,displayName){
+  const token=await getAuthToken(session);
+  const response=await fetch(`${API_BASE}/invite-accept`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json",Accept:"application/json",Authorization:`Bearer ${token}`},
+    body:JSON.stringify({token:inviteToken,display_name:String(displayName||"").trim()})
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not join farm");
+  return data;
+}
+async function finishInviteJoin(session,displayName){
+  const result=await acceptFarmInvite(session,displayName);
+  authSession=session;
+  state.currentUser=String(displayName||authDisplayName(session)||"User").trim();
+  if(result.farm_name)state.farmName=result.farm_name;
+  saveState();
+  inviteToken="";inviteInfo=null;inviteError="";
+  history.replaceState({},"",window.location.pathname);
+  view.page="home";
+  render();
+  syncCowsFromNeon();
+  syncMessagesFromNeon({rerender:false});
+  probeAdminAccess();
+}
 function releaseChatPhotoUrl(messageId){
   const id=String(messageId);
   const url=chatPhotoUrls.get(id);
@@ -293,8 +410,28 @@ async function bootstrapAuth(){
   const resetToken=url.searchParams.get("token");
   const resetMode=url.searchParams.get("reset")==="1";
   const resetError=resetMode?url.searchParams.get("error"):null;
+  const incomingInvite=String(url.searchParams.get("invite")||"").trim();
   if(resetToken){view.page="resetPassword";renderResetPassword(resetToken);return;}
   if(resetMode&&resetError){view.page="login";renderLogin(`Password reset link error: ${resetError}`);return;}
+
+  if(incomingInvite){
+    inviteToken=incomingInvite;
+    inviteInfo=null;inviteError="";
+    renderAuthLoading("Opening invitation…","Checking your farm invitation.");
+    try{
+      inviteInfo=await fetchInviteInfo(inviteToken);
+      const session=await getAuthSession();
+      authSession=session?.user?session:null;
+      view.page="invite";
+      renderInvite();
+    }catch(err){
+      console.error("Invite startup failed",err);
+      inviteError=err?.message||"Could not open this invitation";
+      view.page="invite";
+      renderInvite();
+    }
+    return;
+  }
 
   // Old OAuth/error query strings can remain in a bookmarked GitHub Pages URL.
   // They must never override a valid saved Neon Auth session on refresh.
@@ -324,6 +461,7 @@ async function bootstrapAuth(){
     render();
     syncCowsFromNeon();
     syncMessagesFromNeon({rerender:false});
+    probeAdminAccess();
   }catch(err){
     console.error("Authentication startup check failed",err);
     authSession=null;
@@ -333,8 +471,8 @@ async function bootstrapAuth(){
     renderLogin(err.message||"Could not verify authentication");
   }
 }
-function renderAuthLoading(){
-  usePage(`<main class="screen auth-screen"><section class="auth-card auth-loading-card"><p class="eyebrow">Cattle Records</p><h1>Opening farm…</h1><p class="muted">Restoring your saved sign-in.</p><div class="auth-loading-dots" aria-label="Loading"><span></span><span></span><span></span></div></section></main>`);
+function renderAuthLoading(title="Opening farm…",message="Restoring your saved sign-in."){
+  usePage(`<main class="screen auth-screen"><section class="auth-card auth-loading-card"><p class="eyebrow">Cattle Records</p><h1>${esc(title)}</h1><p class="muted">${esc(message)}</p><div class="auth-loading-dots" aria-label="Loading"><span></span><span></span><span></span></div></section></main>`);
 }
 
 function currentYear(){return new Date().getFullYear()}
@@ -358,7 +496,7 @@ function usePage(html){
   app.innerHTML=html;
   modalRoot.innerHTML="";
 }
-function render(){if(view.page==="login")return renderLogin();if(view.page==="forgotPassword")return renderForgotPassword();if(view.page==="resetPassword")return renderResetPassword(new URLSearchParams(window.location.search).get("token")||"");if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();if(view.page==="activity")return renderActivity();return renderHome()}
+function render(){if(view.page==="login")return renderLogin();if(view.page==="forgotPassword")return renderForgotPassword();if(view.page==="resetPassword")return renderResetPassword(new URLSearchParams(window.location.search).get("token")||"");if(view.page==="invite")return renderInvite();if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();if(view.page==="activity")return renderActivity();if(view.page==="admin")return renderAdmin();return renderHome()}
 function renderLogin(errorMessage=""){
   usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with your farm account.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<form class="stack" id="emailLoginForm"><label class="field"><span>Email</span><input id="loginEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><label class="field"><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Password"></label><button class="primary" id="emailLoginBtn" type="submit">Sign in</button><button class="auth-link" id="forgotPasswordBtn" type="button">Forgot password?</button></form></section></main>`);
   document.getElementById("forgotPasswordBtn").onclick=()=>{view.page="forgotPassword";render()};
@@ -388,9 +526,92 @@ function renderLogin(errorMessage=""){
       }catch(err){
         throw new Error(`WORKER AUTH TEST FAILED: ${err?.message||"Unknown error"}`);
       }
-      history.replaceState({},"",window.location.pathname+window.location.hash);authSession=session;state.currentUser=authDisplayName(session);saveState();view.page="home";render();syncCowsFromNeon();syncMessagesFromNeon({rerender:false});
+      history.replaceState({},"",window.location.pathname+window.location.hash);authSession=session;state.currentUser=authDisplayName(session);saveState();view.page="home";render();syncCowsFromNeon();syncMessagesFromNeon({rerender:false});probeAdminAccess();
     }catch(err){console.error("Email sign in failed",err);renderLogin(`DIAGNOSTIC V34: ${err.message||"Could not sign in"}`);}
   };
+}
+
+function renderInvite(){
+  const farm=inviteInfo?.farm_name||"your farm";
+  const role=String(inviteInfo?.role||"member").toLowerCase();
+  if(inviteError){
+    usePage(`<main class="screen auth-screen"><section class="auth-card invite-card"><p class="eyebrow">Cattle Records</p><h1>Invitation unavailable</h1><p class="auth-error">${esc(inviteError)}</p><button class="soft invite-wide" id="inviteNormalLogin" type="button">Go to sign in</button></section></main>`);
+    document.getElementById("inviteNormalLogin").onclick=()=>{history.replaceState({},"",window.location.pathname);inviteToken="";inviteInfo=null;inviteError="";view.page="login";render();};
+    return;
+  }
+  if(!inviteInfo){renderAuthLoading("Opening invitation…","Checking your farm invitation.");return;}
+
+  const signedIn=Boolean(authSession?.user);
+  usePage(`<main class="screen auth-screen invite-screen"><section class="auth-card invite-card">
+    <p class="eyebrow">Farm invitation</p>
+    <h1>Join ${esc(farm)}</h1>
+    <p class="muted">You've been invited as a <strong>${esc(role)}</strong>. Your account will have access to this farm's shared cattle records.</p>
+    ${signedIn?`
+      <div class="invite-signed-in"><span>Signed in as</span><strong>${esc(authDisplayName(authSession)||"Farm user")}</strong></div>
+      <form class="stack" id="inviteJoinForm">
+        <label class="field"><span>Name shown to farm users</span><input id="inviteDisplayName" maxlength="100" autocomplete="name" required value="${attr(authDisplayName(authSession))}"></label>
+        <button class="primary" id="inviteJoinBtn" type="submit">Join ${esc(farm)}</button>
+        <button class="auth-link" id="inviteDifferentAccount" type="button">Use a different account</button>
+      </form>`:inviteMode==="signin"?`
+      <form class="stack" id="inviteSignInForm">
+        <label class="field"><span>Email</span><input id="inviteEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label>
+        <label class="field"><span>Password</span><input id="invitePassword" type="password" autocomplete="current-password" required placeholder="Password"></label>
+        <button class="primary" id="inviteSignInBtn" type="submit">Sign in & join farm</button>
+        <button class="auth-link" id="inviteToSignup" type="button">Need an account? Create one</button>
+      </form>`:`
+      <form class="stack" id="inviteSignupForm">
+        <label class="field"><span>Your name</span><input id="inviteName" maxlength="100" autocomplete="name" required placeholder="Name shown in the farm"></label>
+        <label class="field"><span>Email</span><input id="inviteEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label>
+        <label class="field"><span>Password</span><input id="invitePassword" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters"></label>
+        <label class="field"><span>Confirm password</span><input id="invitePasswordConfirm" type="password" autocomplete="new-password" minlength="8" required placeholder="Enter it again"></label>
+        <button class="primary" id="inviteSignupBtn" type="submit">Create account & join farm</button>
+        <button class="auth-link" id="inviteToSignin" type="button">Already have an account? Sign in</button>
+      </form>`}
+  </section></main>`);
+
+  if(signedIn){
+    document.getElementById("inviteJoinForm").onsubmit=async e=>{
+      e.preventDefault();const btn=document.getElementById("inviteJoinBtn");const name=document.getElementById("inviteDisplayName").value.trim();
+      btn.disabled=true;btn.textContent="Joining…";
+      try{await finishInviteJoin(authSession,name);}catch(err){console.error("Invite accept failed",err);btn.disabled=false;btn.textContent=`Join ${farm}`;alert(err.message||"Could not join farm");}
+    };
+    document.getElementById("inviteDifferentAccount").onclick=async()=>{try{await authClient.signOut();}catch{}authSession=null;inviteMode="signin";renderInvite();};
+    return;
+  }
+
+  if(inviteMode==="signin"){
+    document.getElementById("inviteToSignup").onclick=()=>{inviteMode="signup";renderInvite();};
+    document.getElementById("inviteSignInForm").onsubmit=async e=>{
+      e.preventDefault();const btn=document.getElementById("inviteSignInBtn");const email=document.getElementById("inviteEmail").value.trim();const password=document.getElementById("invitePassword").value;
+      btn.disabled=true;btn.textContent="Signing in…";
+      try{
+        const result=await authClient.signIn.email({email,password});
+        if(result?.error)throw new Error(result.error.message||"Email or password was not accepted");
+        const session=await getAuthSession();if(!session?.user)throw new Error("Sign-in succeeded but no session was returned.");
+        authSession=session;renderInvite();
+      }catch(err){console.error("Invite sign in failed",err);btn.disabled=false;btn.textContent="Sign in & join farm";alert(err.message||"Could not sign in");}
+    };
+  }else{
+    document.getElementById("inviteToSignin").onclick=()=>{inviteMode="signin";renderInvite();};
+    document.getElementById("inviteSignupForm").onsubmit=async e=>{
+      e.preventDefault();
+      const btn=document.getElementById("inviteSignupBtn");const name=document.getElementById("inviteName").value.trim();const email=document.getElementById("inviteEmail").value.trim();const password=document.getElementById("invitePassword").value;const confirm=document.getElementById("invitePasswordConfirm").value;
+      if(password!==confirm){alert("The two passwords don't match.");return;}
+      btn.disabled=true;btn.textContent="Creating account…";
+      try{
+        const result=await authClient.signUp.email({email,password,name});
+        if(result?.error)throw new Error(result.error.message||"Could not create account");
+        let session=await getAuthSession();
+        if(!session?.user){
+          const signIn=await authClient.signIn.email({email,password});
+          if(signIn?.error)throw new Error("Account created. Please verify your email if requested, then reopen this invitation and sign in.");
+          session=await getAuthSession();
+        }
+        if(!session?.user)throw new Error("Account created. Please verify your email if requested, then reopen this invitation and sign in.");
+        await finishInviteJoin(session,name);
+      }catch(err){console.error("Invite signup failed",err);btn.disabled=false;btn.textContent="Create account & join farm";alert(err.message||"Could not create account");}
+    };
+  }
 }
 function renderForgotPassword(message="",isError=false){
   usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Reset password</h1><p class="muted">Enter your account email and we'll send you a password reset link.</p>${message?`<p class="${isError?"auth-error":"auth-success"}">${esc(message)}</p>`:""}<form class="stack" id="forgotPasswordForm"><label class="field"><span>Email</span><input id="resetEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><button class="primary" id="sendResetBtn" type="submit">Send reset link</button><button class="auth-link" id="backToLoginBtn" type="button">Back to sign in</button></form></section></main>`);
@@ -458,6 +679,93 @@ function renderActivity(){
     btn.disabled=true;btn.textContent="Refreshing…";
     await syncActivityFromNeon();
   };
+}
+
+
+function renderAdmin(){
+  const activeInvites=adminInvites.filter(inv=>!inv.accepted_at);
+  const memberRows=adminMembers.map(member=>{
+    const isMe=String(member.auth_user_id)===String(adminCurrentUserId);
+    const name=String(member.display_name||"Farm user");
+    return `<article class="member-card">
+      <div class="member-main">
+        <div class="member-avatar">${esc(name.slice(0,1).toUpperCase()||"U")}</div>
+        <div class="member-copy"><div class="member-name">${esc(name)}${isMe?` <span class="you-badge">You</span>`:""}</div><div class="member-meta">Joined ${member.created_at?esc(new Intl.DateTimeFormat("en",{month:"short",day:"numeric",year:"numeric"}).format(new Date(member.created_at))):"—"}</div></div>
+      </div>
+      <div class="member-controls">
+        <select class="member-role" data-member-role="${attr(member.id)}" ${isMe?"disabled":""} aria-label="Role for ${attr(name)}"><option value="member" ${member.role==="member"?"selected":""}>Member</option><option value="admin" ${member.role==="admin"?"selected":""}>Admin</option></select>
+        ${isMe?"":`<button class="danger member-remove" type="button" data-member-remove="${attr(member.id)}">Remove</button>`}
+      </div>
+    </article>`;
+  }).join("");
+  const inviteRows=activeInvites.map(inv=>{
+    const expired=new Date(inv.expires_at).getTime()<=Date.now();
+    return `<article class="invite-row ${expired?"invite-expired":""}">
+      <div><strong>${esc(inv.role==="admin"?"Admin invite":"Member invite")}</strong><span>${expired?"Expired":`Expires ${esc(new Intl.DateTimeFormat("en",{month:"short",day:"numeric"}).format(new Date(inv.expires_at)))}`}</span></div>
+      <div class="invite-row-actions"><button class="soft small" type="button" data-copy-invite="${attr(inv.id)}">Copy</button><button class="soft small" type="button" data-share-invite="${attr(inv.id)}">Share</button><button class="link-danger" type="button" data-revoke-invite="${attr(inv.id)}">Revoke</button></div>
+    </article>`;
+  }).join("");
+  usePage(`<main class="screen admin-screen">
+    <header class="topbar"><div class="back-title"><button class="icon-button" id="backAdmin">←</button><div><p class="eyebrow">${esc(state.farmName||"Farm")}</p><h1 class="page-title">Farm users</h1></div></div><button class="soft small" id="refreshAdmin" type="button">Refresh</button></header>
+    ${!adminLoaded?`<div class="activity-status"><span class="activity-spinner"></span><span>Loading farm users…</span></div>`:adminError?`<div class="empty activity-error"><strong>Could not load farm users.</strong><br>${esc(adminError)}</div>`:`
+      <section class="admin-section"><div class="admin-section-head"><div><h2>Users</h2><p>${adminMembers.length} ${adminMembers.length===1?"person":"people"} with farm access</p></div></div><div class="member-list">${memberRows||`<div class="empty">No farm users found.</div>`}</div></section>
+      <section class="admin-section"><div class="admin-section-head"><div><h2>Invite someone</h2><p>Each link works once and expires after 7 days.</p></div></div><div class="invite-create-actions"><button class="primary" id="inviteMember" type="button">+ Invite member</button><button class="soft" id="inviteAdmin" type="button">Invite admin</button></div></section>
+      <section class="admin-section"><div class="admin-section-head"><div><h2>Pending invites</h2><p>${activeInvites.length?"Links that have not been used yet.":"No pending invitations."}</p></div></div>${inviteRows?`<div class="invite-list">${inviteRows}</div>`:""}</section>`}
+  </main>`);
+  document.getElementById("backAdmin").onclick=()=>{view.page="home";render();};
+  document.getElementById("refreshAdmin").onclick=async()=>{const b=document.getElementById("refreshAdmin");b.disabled=true;b.textContent="Refreshing…";await syncAdminFromNeon();};
+  if(!adminLoaded||adminError)return;
+  document.getElementById("inviteMember").onclick=()=>createFarmInvite("member");
+  document.getElementById("inviteAdmin").onclick=()=>{if(confirm("An admin can invite/remove users and change roles. Create an admin invite?"))createFarmInvite("admin");};
+  document.querySelectorAll("[data-member-role]").forEach(select=>{select.onchange=()=>changeMemberRole(select.dataset.memberRole,select.value,select);});
+  document.querySelectorAll("[data-member-remove]").forEach(btn=>{btn.onclick=()=>removeFarmMember(btn.dataset.memberRemove);});
+  document.querySelectorAll("[data-copy-invite]").forEach(btn=>{btn.onclick=async()=>{const inv=adminInvites.find(i=>String(i.id)===String(btn.dataset.copyInvite));if(!inv)return;const ok=await copyText(buildInviteLink(inv.token));btn.textContent=ok?"Copied":"Copy";setTimeout(()=>{if(btn.isConnected)btn.textContent="Copy";},1500);};});
+  document.querySelectorAll("[data-share-invite]").forEach(btn=>{btn.onclick=()=>{const inv=adminInvites.find(i=>String(i.id)===String(btn.dataset.shareInvite));if(inv)shareInvite(inv);};});
+  document.querySelectorAll("[data-revoke-invite]").forEach(btn=>{btn.onclick=()=>revokeFarmInvite(btn.dataset.revokeInvite);});
+}
+async function createFarmInvite(role){
+  const button=document.getElementById(role==="admin"?"inviteAdmin":"inviteMember");if(button){button.disabled=true;button.textContent="Creating…";}
+  try{
+    const response=await apiFetch("/api/invites",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({role,expires_days:7})});
+    const data=await response.json();if(!response.ok||!data.ok||!data.invite)throw new Error(data.error||data.message||"Could not create invite");
+    adminInvites.unshift(data.invite);renderAdmin();showInviteCreated(data.invite);
+  }catch(err){alert(err.message||"Could not create invite");if(button){button.disabled=false;button.textContent=role==="admin"?"Invite admin":"+ Invite member";}}
+}
+function showInviteCreated(invite){
+  const link=buildInviteLink(invite.token);
+  openModal(`<div class="modal-card invite-link-modal"><p class="eyebrow">Invitation ready</p><h2>${invite.role==="admin"?"Admin":"Member"} invite</h2><p class="muted">Send this link to the person you want to add. It can only be used once.</p><label class="field"><span>Invite link</span><input id="inviteLinkField" readonly value="${attr(link)}"></label><div class="modal-actions"><button class="soft" id="copyCreatedInvite" type="button">Copy link</button><button class="primary" id="shareCreatedInvite" type="button">Share</button><button class="soft" id="closeCreatedInvite" type="button">Done</button></div></div>`,()=>{
+    document.getElementById("copyCreatedInvite").onclick=async()=>{const b=document.getElementById("copyCreatedInvite");const ok=await copyText(link);b.textContent=ok?"Copied!":"Copy link";};
+    document.getElementById("shareCreatedInvite").onclick=()=>shareInvite(invite);
+    document.getElementById("closeCreatedInvite").onclick=closeModal;
+  });
+}
+async function changeMemberRole(memberId,role,select){
+  const member=adminMembers.find(m=>String(m.id)===String(memberId));if(!member)return;
+  const previous=member.role;
+  select.disabled=true;
+  try{
+    const response=await apiFetch(`/api/members/${encodeURIComponent(memberId)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({role})});
+    const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not change role");
+    member.role=data.member.role;renderAdmin();
+  }catch(err){member.role=previous;select.value=previous;select.disabled=false;alert(err.message||"Could not change role");}
+}
+async function removeFarmMember(memberId){
+  const member=adminMembers.find(m=>String(m.id)===String(memberId));if(!member)return;
+  if(!confirm(`Remove ${member.display_name||"this user"} from ${state.farmName||"the farm"}? They will no longer be able to access the farm records.`))return;
+  try{
+    const response=await apiFetch(`/api/members/${encodeURIComponent(memberId)}`,{method:"DELETE"});
+    const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not remove user");
+    adminMembers=adminMembers.filter(m=>String(m.id)!==String(memberId));renderAdmin();
+  }catch(err){alert(err.message||"Could not remove user");}
+}
+async function revokeFarmInvite(inviteId){
+  const invite=adminInvites.find(i=>String(i.id)===String(inviteId));if(!invite)return;
+  if(!confirm("Revoke this unused invitation?"))return;
+  try{
+    const response=await apiFetch(`/api/invites/${encodeURIComponent(inviteId)}`,{method:"DELETE"});
+    const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not revoke invite");
+    adminInvites=adminInvites.filter(i=>String(i.id)!==String(inviteId));renderAdmin();
+  }catch(err){alert(err.message||"Could not revoke invite");}
 }
 
 function renderCattle(){
@@ -1452,11 +1760,21 @@ async function installPwa(){
 function registerServiceWorker(){
   if(!("serviceWorker" in navigator))return;
   window.addEventListener("load",()=>{
-    navigator.serviceWorker.register("./service-worker.js?v=44",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
+    navigator.serviceWorker.register("./service-worker.js?v=46",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
   });
 }
 registerServiceWorker();
-function showFarmMenu(){openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="activityLog">Activity</button><button class="soft" id="farmProfile">Farm profile</button>${!isStandalone()?'<button class="soft" id="installApp">Install app</button>':''}<button class="soft" id="logout">Log out</button></div></div>`,()=>{document.getElementById("closeMenu").onclick=closeModal;document.getElementById("activityLog").onclick=()=>{closeModal();view.page="activity";activityLoaded=false;activityError="";render();syncActivityFromNeon()};document.getElementById("farmProfile").onclick=showFarmProfile;const installBtn=document.getElementById("installApp");if(installBtn)installBtn.onclick=async()=>{closeModal();await installPwa()};document.getElementById("logout").onclick=async()=>{const btn=document.getElementById("logout");btn.disabled=true;btn.textContent="Logging out…";try{await authClient.signOut()}catch(err){console.error("Neon Auth sign out failed",err)}authSession=null;state.currentUser="";saveState();closeModal();view.page="login";render()}})}
+function showFarmMenu(){
+  const adminButton=farmAdminAccess===false?"":'<button class="soft" id="farmUsers">Farm users</button>';
+  openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="activityLog">Activity</button>${adminButton}<button class="soft" id="farmProfile">Farm profile</button>${!isStandalone()?'<button class="soft" id="installApp">Install app</button>':''}<button class="soft" id="logout">Log out</button></div></div>`,()=>{
+    document.getElementById("closeMenu").onclick=closeModal;
+    document.getElementById("activityLog").onclick=()=>{closeModal();view.page="activity";activityLoaded=false;activityError="";render();syncActivityFromNeon();};
+    const usersBtn=document.getElementById("farmUsers");if(usersBtn)usersBtn.onclick=()=>{closeModal();view.page="admin";adminLoaded=false;adminError="";render();syncAdminFromNeon();};
+    document.getElementById("farmProfile").onclick=showFarmProfile;
+    const installBtn=document.getElementById("installApp");if(installBtn)installBtn.onclick=async()=>{closeModal();await installPwa();};
+    document.getElementById("logout").onclick=async()=>{const btn=document.getElementById("logout");btn.disabled=true;btn.textContent="Logging out…";try{await authClient.signOut();}catch(err){console.error("Neon Auth sign out failed",err);}authSession=null;farmAdminAccess=null;adminMembers=[];adminInvites=[];state.currentUser="";saveState();closeModal();view.page="login";render();};
+  });
+}
 
 function showFarmProfile(){openModal(`<form class="modal-card" id="farmProfileForm"><p class="eyebrow">Settings</p><h2>Farm profile</h2><div class="stack"><label><span>Farm name</span><input id="farmNameInput" maxlength="100" value="${attr(state.farmName||"")}"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelFarm">Cancel</button><button type="submit" class="primary">Save</button></div></form>`,()=>{document.getElementById("cancelFarm").onclick=closeModal;document.getElementById("farmProfileForm").onsubmit=e=>{e.preventDefault();state.farmName=document.getElementById("farmNameInput").value.trim()||"Cattle Records";saveState();closeModal();render()}})}
 function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Options</h2><div class="menu-list" style="margin-top:14px"><button class="soft" id="editCow">Edit brand number</button><button class="danger" id="deleteCow">Delete cow</button><button class="soft" id="closeCowMenu">Cancel</button></div></div>`,()=>{
