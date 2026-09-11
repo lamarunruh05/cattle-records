@@ -1684,13 +1684,23 @@ function urlBase64ToUint8Array(base64String){
 }
 async function getPushRegistration(){
   if(!pushNotificationsSupported())throw new Error("Push notifications are not supported on this device/browser.");
-  return navigator.serviceWorker.ready;
+  let registration=await navigator.serviceWorker.getRegistration();
+  if(!registration){
+    registration=await navigator.serviceWorker.register("./service-worker.js?v=49",{updateViaCache:"none"});
+  }
+  if(!registration.active){
+    const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error("The app service worker is still starting. Close and reopen Cattle Records, then try again.")),8000));
+    registration=await Promise.race([navigator.serviceWorker.ready,timeout]);
+  }
+  return registration;
 }
 async function enablePushNotifications(){
-  const registration=await getPushRegistration();
+  // Ask for permission immediately from the user's button tap. Some browsers
+  // no longer consider it a user gesture after awaiting other async work first.
   let permission=Notification.permission;
   if(permission!=="granted")permission=await Notification.requestPermission();
   if(permission!=="granted")throw new Error(permission==="denied"?"Notifications are blocked for Cattle Records. Enable them in your phone/browser settings first.":"Notification permission was not granted.");
+  const registration=await getPushRegistration();
 
   let subscription=await registration.pushManager.getSubscription();
   if(!subscription){
@@ -1734,6 +1744,9 @@ async function showNotificationSettingsModal(){
     openModal(`<div class="modal-card"><p class="eyebrow">Farm Chat</p><h2>Notifications</h2><p class="muted">Push notifications are not supported by this browser. On Android, use the installed Cattle Records app or Chrome.</p><div class="modal-actions"><button class="soft" id="closeNotifications" type="button">Close</button></div></div>`,()=>{document.getElementById("closeNotifications").onclick=closeModal});
     return;
   }
+  // Show something immediately so the menu never appears to do nothing while
+  // Android/Chrome checks the service-worker registration.
+  openModal(`<div class="modal-card"><p class="eyebrow">Farm Chat</p><h2>Notifications</h2><p class="muted">Checking this device…</p></div>`);
   try{
     const registration=await getPushRegistration();
     const subscription=await registration.pushManager.getSubscription();
@@ -1760,7 +1773,7 @@ async function showNotificationSettingsModal(){
       };
     });
   }catch(err){
-    alert(`Could not check notification settings. ${err.message}`);
+    openModal(`<div class="modal-card"><p class="eyebrow">Farm Chat</p><h2>Notifications</h2><p class="muted">Could not check notification settings.</p><p class="muted admin-modal-copy">${esc(err.message||"Unknown error")}</p><div class="modal-actions"><button class="soft" id="closeNotifications" type="button">Close</button></div></div>`,()=>{document.getElementById("closeNotifications").onclick=closeModal});
   }
 }
 function openFarmChatFromNotification(){
@@ -1800,7 +1813,7 @@ async function installPwa(){
 function registerServiceWorker(){
   if(!("serviceWorker" in navigator))return;
   window.addEventListener("load",()=>{
-    navigator.serviceWorker.register("./service-worker.js?v=48",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
+    navigator.serviceWorker.register("./service-worker.js?v=49",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
   });
 }
 registerServiceWorker();
