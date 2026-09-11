@@ -26,6 +26,8 @@ let state=loadState();
 if(!Array.isArray(state.owners))state.owners=[];
 let view={page:"login",cowId:null,ownerFilter:"",search:""};
 let pendingPhoto=null;
+const chatPhotoUrls=new Map();
+const chatPhotoLoads=new Map();
 const app=document.getElementById("app"),modalRoot=document.getElementById("modalRoot");
 function loadState(){try{const raw=localStorage.getItem(STORAGE_KEY);if(raw)return JSON.parse(raw)}catch{}return JSON.parse(JSON.stringify(initialData))}
 function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}
@@ -141,6 +143,90 @@ async function apiFetch(path,options={}){
   headers.set("Authorization",`Bearer ${token}`);
   if(!headers.has("Accept"))headers.set("Accept","application/json");
   return fetch(`${API_BASE}${path}`,{...options,headers});
+}
+function releaseChatPhotoUrl(messageId){
+  const id=String(messageId);
+  const url=chatPhotoUrls.get(id);
+  if(url){
+    URL.revokeObjectURL(url);
+    chatPhotoUrls.delete(id);
+  }
+  chatPhotoLoads.delete(id);
+}
+async function getChatPhotoUrl(messageId){
+  const id=String(messageId);
+  if(chatPhotoUrls.has(id))return chatPhotoUrls.get(id);
+  if(chatPhotoLoads.has(id))return chatPhotoLoads.get(id);
+  const load=(async()=>{
+    const response=await apiFetch(`/api/media/${encodeURIComponent(id)}`,{cache:"no-store"});
+    if(!response.ok){
+      let detail="Could not load photo";
+      try{const data=await response.json();detail=data.error||data.message||detail}catch{}
+      throw new Error(detail);
+    }
+    const blob=await response.blob();
+    const url=URL.createObjectURL(blob);
+    chatPhotoUrls.set(id,url);
+    return url;
+  })();
+  chatPhotoLoads.set(id,load);
+  try{return await load}
+  finally{chatPhotoLoads.delete(id)}
+}
+function hydrateChatPhotos(root=document){
+  root.querySelectorAll("img[data-chat-media-id]").forEach(img=>{
+    const id=img.dataset.chatMediaId;
+    if(!id||img.dataset.loaded==="1")return;
+    img.dataset.loaded="loading";
+    getChatPhotoUrl(id).then(url=>{
+      if(!img.isConnected)return;
+      img.src=url;
+      img.hidden=false;
+      img.dataset.loaded="1";
+      const wrap=img.closest("[data-photo-shell]");
+      wrap?.classList.add("photo-ready");
+    }).catch(err=>{
+      console.error("Could not load chat photo",err);
+      if(!img.isConnected)return;
+      img.dataset.loaded="error";
+      const wrap=img.closest("[data-photo-shell]");
+      if(wrap){
+        wrap.classList.add("photo-error");
+        const loading=wrap.querySelector(".chat-photo-loading");
+        if(loading)loading.textContent="Photo unavailable";
+      }
+    });
+  });
+}
+async function prepareChatPhoto(file){
+  if(!file||!String(file.type||"").startsWith("image/"))throw new Error("Please choose an image.");
+  const allowed=new Set(["image/jpeg","image/png","image/webp"]);
+  const maxBytes=8*1024*1024;
+  const maxDimension=1800;
+  const makeBitmap=async()=>{
+    try{return await createImageBitmap(file,{imageOrientation:"from-image"})}
+    catch{return await createImageBitmap(file)}
+  };
+  try{
+    const bitmap=await makeBitmap();
+    const scale=Math.min(1,maxDimension/Math.max(bitmap.width,bitmap.height));
+    const width=Math.max(1,Math.round(bitmap.width*scale));
+    const height=Math.max(1,Math.round(bitmap.height*scale));
+    const canvas=document.createElement("canvas");
+    canvas.width=width;canvas.height=height;
+    const ctx=canvas.getContext("2d",{alpha:false});
+    ctx.drawImage(bitmap,0,0,width,height);
+    bitmap.close?.();
+    const toJpeg=quality=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Could not prepare photo")),"image/jpeg",quality));
+    let blob=await toJpeg(.82);
+    if(blob.size>maxBytes)blob=await toJpeg(.68);
+    if(blob.size>maxBytes)throw new Error("Photo is still larger than 8 MB after compression.");
+    if(allowed.has(file.type)&&file.size<=maxBytes&&file.size<=blob.size)return file;
+    return new File([blob],`farm-photo-${Date.now()}.jpg`,{type:"image/jpeg"});
+  }catch(err){
+    if(allowed.has(file.type)&&file.size>0&&file.size<=maxBytes)return file;
+    throw new Error(err?.message||"This image format could not be prepared. Try a JPEG, PNG, or WebP photo.");
+  }
 }
 function authDisplayName(session){
   return String(session?.user?.name||session?.user?.email||"").trim();
@@ -560,6 +646,8 @@ async function syncMessagesFromNeon({rerender=true}={}){
         photo:m.photo_url||null,
         shared:true
       }));
+      const livePhotoIds=new Set(state.notes.filter(n=>n.photo).map(n=>String(n.id)));
+      for(const id of [...chatPhotoUrls.keys()])if(!livePhotoIds.has(id))releaseChatPhotoUrl(id);
       saveState();
       if(rerender&&view.page==="chat")renderChat();
       else if(rerender&&view.page==="home")renderHome();
@@ -590,26 +678,27 @@ function renderChat(){
         <article class="message-bubble">
           <div class="message-topline"><div class="message-meta">${esc(n.user)} · ${formatDateTime(n.timestamp)}</div><button class="message-menu-btn" type="button" data-message-menu="${attr(n.id)}" aria-label="Message options">•••</button></div>
           ${n.text?`<div class="message-text">${esc(n.text)}</div>`:""}
-          ${n.photo?`<button class="chat-photo-button" type="button" data-chat-photo="${attr(n.photo)}"><img src="${attr(n.photo)}" alt="Farm chat photo"></button>`:""}
+          ${n.photo?`<button class="chat-photo-button" type="button" data-chat-photo-id="${attr(n.id)}" data-photo-shell><div class="chat-photo-loading">Loading photo…</div><img data-chat-media-id="${attr(n.id)}" alt="Farm chat photo" hidden></button>`:""}
         </article>
       </div>`).join(""):`<div class="empty">No messages yet.</div>`}
     </section>
 
     <section class="chat-composer">
       <form id="chatForm" class="chat-compose-box">
-        <textarea id="chatText" rows="2" maxlength="500" placeholder="Message"></textarea>
+        <textarea id="chatText" rows="2" maxlength="500" placeholder="Message or photo caption"></textarea>
+        <div class="chat-photo-preview" id="chatPhotoPreview" hidden></div>
         <div class="composer-row">
-          <button class="photo-button chat-photo-disabled" id="chatPhotoSoon" type="button"><span>📷 Photo</span></button>
+          <label class="photo-button" id="chatPhotoLabel"><span>📷 Photo</span><input id="chatPhotoInput" type="file" accept="image/*"></label>
           <button class="primary small" id="chatSendBtn" type="submit">Send</button>
         </div>
       </form>
     </section>
   </main>`);
-  document.getElementById("backHome").onclick=()=>{view.page="home";render()};
+  document.getElementById("backHome").onclick=()=>{pendingPhoto=null;view.page="home";render()};
   document.getElementById("openMedia").onclick=()=>showChatMedia(notes);
-  document.getElementById("chatPhotoSoon").onclick=()=>alert("Shared photo uploading is the next step. Text messages are already shared across the farm.");
   setupChatComposer();
-  document.querySelectorAll("[data-chat-photo]").forEach(btn=>{btn.onclick=()=>openPhotoViewer(btn.dataset.chatPhoto)});
+  hydrateChatPhotos(document);
+  document.querySelectorAll("[data-chat-photo-id]").forEach(btn=>{btn.onclick=()=>{const n=state.notes.find(x=>String(x.id)===String(btn.dataset.chatPhotoId));if(n)openPhotoViewer(n)}});
   document.querySelectorAll("[data-message-menu]").forEach(btn=>{btn.onclick=()=>showMessageMenu(btn.dataset.messageMenu)});
   const list=document.getElementById("chatList");
   if(list)list.scrollTop=list.scrollHeight;
@@ -627,6 +716,7 @@ function showMessageMenu(messageId){
         const response=await apiFetch(`/api/messages/${encodeURIComponent(messageId)}`,{method:"DELETE"});
         const data=await response.json();
         if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete message");
+        releaseChatPhotoUrl(messageId);
         state.notes=state.notes.filter(n=>String(n.id)!==String(messageId));saveState();closeModal();renderChat();
       }catch(err){alert(`Could not delete message. ${err.message}`);btn.disabled=false;btn.textContent="Delete message"}
     };
@@ -635,26 +725,36 @@ function showMessageMenu(messageId){
 
 function showChatMedia(notes=state.notes){
   const media=[...notes].filter(n=>n.photo).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
-  openModal(`<div class="modal-card media-modal"><div class="section-heading"><div><p class="eyebrow">Farm Chat</p><h2>Media</h2></div><button class="icon-button" id="closeMedia">×</button></div>${media.length?`<div class="media-grid">${media.map(n=>`<button type="button" class="media-thumb" data-media-photo="${attr(n.photo)}"><img src="${attr(n.photo)}" alt="Photo sent by ${attr(n.user)}"><span>${esc(n.user)} · ${shortDate(n.timestamp)}</span></button>`).join("")}</div>`:`<div class="empty media-empty"><strong>No shared photos yet.</strong><br>Photos will appear here after shared photo storage is connected.</div>`}</div>`,()=>{
+  openModal(`<div class="modal-card media-modal"><div class="section-heading"><div><p class="eyebrow">Farm Chat</p><h2>Media</h2></div><button class="icon-button" id="closeMedia">×</button></div>${media.length?`<div class="media-grid">${media.map(n=>`<button type="button" class="media-thumb" data-media-message-id="${attr(n.id)}"><div class="media-thumb-photo" data-photo-shell><div class="chat-photo-loading">Loading…</div><img data-chat-media-id="${attr(n.id)}" alt="Photo sent by ${attr(n.user)}" hidden></div><span>${esc(n.user)} · ${shortDate(n.timestamp)}</span></button>`).join("")}</div>`:`<div class="empty media-empty"><strong>No shared photos yet.</strong><br>Photos sent in Farm Chat will appear here.</div>`}</div>`,()=>{
     document.getElementById("closeMedia").onclick=closeModal;
-    modalRoot.querySelectorAll("[data-media-photo]").forEach(btn=>btn.onclick=()=>openPhotoViewer(btn.dataset.mediaPhoto));
+    hydrateChatPhotos(modalRoot);
+    modalRoot.querySelectorAll("[data-media-message-id]").forEach(btn=>btn.onclick=()=>{const n=state.notes.find(x=>String(x.id)===String(btn.dataset.mediaMessageId));if(n)openPhotoViewer(n)});
   });
 }
 
-function openPhotoViewer(src){
+function openPhotoViewer(message){
+  if(!message?.id)return;
   const viewer=document.createElement("div");
   viewer.className="photo-viewer";
   viewer.innerHTML=`
     <button type="button" class="photo-viewer-close" aria-label="Close">×</button>
     <div class="photo-viewer-stage">
-      <img class="photo-viewer-image" src="${attr(src)}" alt="Chat photo">
+      <div class="photo-viewer-loading">Loading photo…</div>
+      <img class="photo-viewer-image" alt="Photo posted by ${attr(message.user||"User")}" hidden>
     </div>
+    <div class="photo-viewer-info"><strong>${esc(message.user||"User")}</strong><span>${formatDateTime(message.timestamp)}</span></div>
   `;
   document.body.appendChild(viewer);
 
   const stage=viewer.querySelector(".photo-viewer-stage");
   const img=viewer.querySelector(".photo-viewer-image");
+  const loading=viewer.querySelector(".photo-viewer-loading");
   const close=()=>viewer.remove();
+
+  getChatPhotoUrl(message.id).then(url=>{
+    if(!viewer.isConnected)return;
+    img.src=url;img.hidden=false;loading.hidden=true;
+  }).catch(err=>{if(viewer.isConnected)loading.textContent=err.message||"Could not load photo"});
 
   viewer.querySelector(".photo-viewer-close").onclick=close;
   viewer.addEventListener("click",e=>{
@@ -726,20 +826,57 @@ function openPhotoViewer(src){
 }
 
 function setupChatComposer(){
-  const form=document.getElementById("chatForm"),input=document.getElementById("chatText"),btn=document.getElementById("chatSendBtn");
+  const form=document.getElementById("chatForm"),input=document.getElementById("chatText"),btn=document.getElementById("chatSendBtn"),photoInput=document.getElementById("chatPhotoInput"),photoLabel=document.getElementById("chatPhotoLabel"),preview=document.getElementById("chatPhotoPreview");
+  let previewUrl=null;
+  const clearPreview=()=>{
+    if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null}
+    pendingPhoto=null;
+    photoInput.value="";
+    preview.hidden=true;preview.innerHTML="";
+    photoLabel.classList.remove("is-preparing");
+    photoLabel.querySelector("span").textContent="📷 Photo";
+  };
+  photoInput.onchange=async()=>{
+    const chosen=photoInput.files?.[0];
+    if(!chosen){clearPreview();return}
+    photoLabel.classList.add("is-preparing");photoLabel.querySelector("span").textContent="Preparing…";btn.disabled=true;
+    try{
+      const prepared=await prepareChatPhoto(chosen);
+      pendingPhoto=prepared;
+      if(previewUrl)URL.revokeObjectURL(previewUrl);
+      previewUrl=URL.createObjectURL(prepared);
+      preview.innerHTML=`<div class="chat-photo-preview-card"><img src="${attr(previewUrl)}" alt="Photo ready to send"><div><strong>Photo ready</strong><span>${Math.max(1,Math.round(prepared.size/1024))} KB</span></div><button type="button" class="icon-button chat-photo-remove" aria-label="Remove photo">×</button></div>`;
+      preview.hidden=false;
+      preview.querySelector(".chat-photo-remove").onclick=clearPreview;
+    }catch(err){
+      clearPreview();
+      alert(err.message||"Could not prepare that photo.");
+    }finally{
+      photoLabel.classList.remove("is-preparing");photoLabel.querySelector("span").textContent="📷 Photo";btn.disabled=false;
+    }
+  };
   form.onsubmit=async e=>{
     e.preventDefault();
     const text=input.value.trim();
-    if(!text)return;
-    btn.disabled=true;btn.textContent="Sending…";
+    if(!text&&!pendingPhoto)return;
+    btn.disabled=true;btn.textContent=pendingPhoto?"Uploading…":"Sending…";photoInput.disabled=true;
     try{
-      const response=await apiFetch("/api/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message_text:text})});
+      let response;
+      if(pendingPhoto){
+        const formData=new FormData();
+        formData.append("photo",pendingPhoto,pendingPhoto.name||`farm-photo-${Date.now()}.jpg`);
+        if(text)formData.append("message_text",text);
+        response=await apiFetch("/api/messages/photo",{method:"POST",body:formData});
+      }else{
+        response=await apiFetch("/api/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message_text:text})});
+      }
       const data=await response.json();
       if(!response.ok||!data.ok||!data.message)throw new Error(data.error||data.message||"Could not send message");
       const m=data.message;
-      state.notes.push({id:m.id,authUserId:m.auth_user_id||"",user:m.display_name||state.currentUser||"User",timestamp:m.created_at,text:m.message_text||text,photo:m.photo_url||null,shared:true});
-      saveState();renderChat();
-    }catch(err){alert(`Could not send message. ${err.message}`);btn.disabled=false;btn.textContent="Send"}
+      state.notes.push({id:m.id,authUserId:m.auth_user_id||"",user:m.display_name||state.currentUser||"User",timestamp:m.created_at,text:m.message_text||"",photo:m.photo_url||null,shared:true});
+      if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null}
+      pendingPhoto=null;saveState();renderChat();
+    }catch(err){alert(`Could not send message. ${err.message}`);btn.disabled=false;btn.textContent="Send";photoInput.disabled=false}
   };
 }
 
