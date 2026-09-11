@@ -9,16 +9,16 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Cattle Records" />
   <title>Cattle Records</title>
-  <!-- Cattle Records build v46 farm-users-admin -->
-  <link rel="manifest" href="manifest.webmanifest?v=46" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=46" />
-  <link rel="stylesheet" href="styles.css?v=46" />
+  <!-- Cattle Records build v47 auto-sync -->
+  <link rel="manifest" href="manifest.webmanifest?v=47" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=47" />
+  <link rel="stylesheet" href="styles.css?v=47" />
 </head>
 <body>
   <div id="app"><main class="screen"><p class="muted">Loading cattle records…</p></main></div>
   <div id="modalRoot"></div>
   <script type="module">
-    import("./app.js?v=46").catch(error=>{
+    import("./app.js?v=47").catch(error=>{
       console.error("Cattle Records startup failed",error);
       const root=document.getElementById("app");
       if(root)root.innerHTML=`<main class="screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h2>App could not start</h2><p class="muted">The app files did not load correctly. Make sure you are online, then close and reopen the app.</p><p class="muted" style="font-size:.8rem;word-break:break-word">${String(error?.message||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}</p></section></main>`;

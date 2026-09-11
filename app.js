@@ -45,6 +45,8 @@ let adminLoaded=false;
 let adminError="";
 let adminSyncInFlight=null;
 let inviteAuthMode="signup";
+const AUTO_SYNC_MS=10000;
+let autoSyncInFlight=false;
 const chatPhotoUrls=new Map();
 const chatPhotoLoads=new Map();
 const app=document.getElementById("app"),modalRoot=document.getElementById("modalRoot");
@@ -1792,6 +1794,65 @@ async function revokePendingInvite(inviteId){
     farmInvites=farmInvites.filter(i=>String(i.id)!==String(invite.id));renderAdminUsers();
   }catch(err){alert(`Could not revoke invitation. ${err.message}`)}
 }
+function autoSyncPageIsInteractive(){
+  if(modalRoot?.children?.length)return true;
+  const active=document.activeElement;
+  if(active&&active!==document.body&&["INPUT","TEXTAREA","SELECT"].includes(active.tagName))return true;
+  if(view.page==="chat"){
+    const draft=document.getElementById("chatText");
+    if((draft?.value||"").trim()||pendingPhoto)return true;
+  }
+  return false;
+}
+function autoSyncSignature(page){
+  if(page==="home")return JSON.stringify([state.cows,state.notes]);
+  if(["cattle","cow","scorecard","herdScorecard"].includes(page))return JSON.stringify(state.cows);
+  if(page==="chat")return JSON.stringify(state.notes);
+  if(page==="activity")return JSON.stringify(activityEntries);
+  if(page==="adminUsers")return JSON.stringify([farmMembers,farmInvites,adminAccess]);
+  return "";
+}
+async function autoSyncCurrentView(){
+  if(autoSyncInFlight||document.visibilityState==="hidden"||!authSession?.user)return;
+  if(autoSyncPageIsInteractive())return;
+  const page=view.page;
+  if(["login","forgotPassword","resetPassword"].includes(page))return;
+  autoSyncInFlight=true;
+  const before=autoSyncSignature(page);
+  try{
+    if(page==="home"){
+      await Promise.all([syncCowsFromNeon({rerender:false}),syncMessagesFromNeon({rerender:false})]);
+    }else if(["cattle","cow","scorecard","herdScorecard"].includes(page)){
+      await syncCowsFromNeon({rerender:false});
+    }else if(page==="chat"){
+      await syncMessagesFromNeon({rerender:false});
+    }else if(page==="activity"){
+      await syncActivityFromNeon({rerender:false});
+    }else if(page==="adminUsers"){
+      await syncAdminFromNeon({rerender:false});
+    }else{
+      return;
+    }
+    const changed=before!==autoSyncSignature(page);
+    if(changed&&view.page===page&&!autoSyncPageIsInteractive()){
+      const scrollX=window.scrollX,scrollY=window.scrollY;
+      render();
+      requestAnimationFrame(()=>window.scrollTo(scrollX,scrollY));
+    }
+  }catch(err){
+    console.error("Automatic farm sync failed",err);
+  }finally{
+    autoSyncInFlight=false;
+  }
+}
+function setupAutoSync(){
+  setInterval(autoSyncCurrentView,AUTO_SYNC_MS);
+  window.addEventListener("focus",autoSyncCurrentView);
+  document.addEventListener("visibilitychange",()=>{
+    if(document.visibilityState==="visible")autoSyncCurrentView();
+  });
+}
+
 function showFarmMenu(){
   const usersButton=adminAccess===true?'<button class="soft" id="farmUsers">Farm users</button>':'';
   openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="activityLog">Activity</button>${usersButton}<button class="soft" id="farmProfile">Farm profile</button>${!isStandalone()?'<button class="soft" id="installApp">Install app</button>':''}<button class="soft" id="logout">Log out</button></div></div>`,()=>{
@@ -1848,6 +1909,7 @@ function showEditCowModal(cow){openModal(`<form class="modal-card" id="editCowFo
     }catch(err){alert(`Could not update cow in the shared database. ${err.message}`);btn.disabled=false;btn.textContent="Save"}
   };
 })}
+setupAutoSync();
 try{bootstrapAuth()}catch(err){
   console.error(err);
   const a=document.getElementById("app");
