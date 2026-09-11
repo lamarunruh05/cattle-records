@@ -3,6 +3,13 @@ import { createAuthClient } from "https://esm.sh/@neondatabase/auth@0.5.0-beta?b
 const NEON_AUTH_URL="https://ep-lively-breeze-acpy4xfq.neonauth.sa-east-1.aws.neon.tech/neondb/auth";
 const authClient=createAuthClient(NEON_AUTH_URL);
 let authSession=null;
+let deferredInstallPrompt=null;
+const isStandalone=()=>window.matchMedia?.("(display-mode: standalone)")?.matches||window.navigator.standalone===true;
+window.addEventListener("beforeinstallprompt",event=>{
+  event.preventDefault();
+  deferredInstallPrompt=event;
+});
+window.addEventListener("appinstalled",()=>{deferredInstallPrompt=null;});
 
 function uid(){return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10)}
 const STORAGE_KEY="cattleRecordsPrototypeV2";
@@ -282,11 +289,24 @@ async function testWorkerAuth(session=null){
   return data;
 }
 async function bootstrapAuth(){
-  const resetToken=new URLSearchParams(window.location.search).get("token");
-  const resetError=new URLSearchParams(window.location.search).get("error");
+  const url=new URL(window.location.href);
+  const resetToken=url.searchParams.get("token");
+  const resetMode=url.searchParams.get("reset")==="1";
+  const resetError=resetMode?url.searchParams.get("error"):null;
   if(resetToken){view.page="resetPassword";renderResetPassword(resetToken);return;}
-  if(resetError){view.page="login";renderLogin(`Password reset link error: ${resetError}`);return;}
-  render();
+  if(resetMode&&resetError){view.page="login";renderLogin(`Password reset link error: ${resetError}`);return;}
+
+  // Old OAuth/error query strings can remain in a bookmarked GitHub Pages URL.
+  // They must never override a valid saved Neon Auth session on refresh.
+  const staleAuthKeys=["error","error_description","code","state","reset"];
+  let cleaned=false;
+  for(const key of staleAuthKeys){if(url.searchParams.has(key)){url.searchParams.delete(key);cleaned=true;}}
+  if(cleaned){
+    const cleanUrl=url.pathname+(url.searchParams.toString()?`?${url.searchParams}`:"")+url.hash;
+    history.replaceState({},"",cleanUrl);
+  }
+
+  renderAuthLoading();
   try{
     const session=await getAuthSession();
     if(!session?.user){
@@ -303,6 +323,7 @@ async function bootstrapAuth(){
     view.page="home";
     render();
     syncCowsFromNeon();
+    syncMessagesFromNeon({rerender:false});
   }catch(err){
     console.error("Authentication startup check failed",err);
     authSession=null;
@@ -312,6 +333,10 @@ async function bootstrapAuth(){
     renderLogin(err.message||"Could not verify authentication");
   }
 }
+function renderAuthLoading(){
+  usePage(`<main class="screen auth-screen"><section class="auth-card auth-loading-card"><p class="eyebrow">Cattle Records</p><h1>Opening farm…</h1><p class="muted">Restoring your saved sign-in.</p><div class="auth-loading-dots" aria-label="Loading"><span></span><span></span><span></span></div></section></main>`);
+}
+
 function currentYear(){return new Date().getFullYear()}
 function appGender(v){const g=String(v||"").trim().toLowerCase();if(g==="male"||g==="bull")return "Bull";if(g==="female"||g==="heifer")return "Heifer";return ""}
 function monthName(m){return new Intl.DateTimeFormat("en",{month:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2020,m-1,1)))}
@@ -362,7 +387,7 @@ function renderLogin(errorMessage=""){
       }catch(err){
         throw new Error(`WORKER AUTH TEST FAILED: ${err?.message||"Unknown error"}`);
       }
-      authSession=session;state.currentUser=authDisplayName(session);saveState();view.page="home";render();syncCowsFromNeon();syncMessagesFromNeon({rerender:false});
+      history.replaceState({},"",window.location.pathname+window.location.hash);authSession=session;state.currentUser=authDisplayName(session);saveState();view.page="home";render();syncCowsFromNeon();syncMessagesFromNeon({rerender:false});
     }catch(err){console.error("Email sign in failed",err);renderLogin(`DIAGNOSTIC V34: ${err.message||"Could not sign in"}`);}
   };
 }
@@ -375,7 +400,7 @@ function renderForgotPassword(message="",isError=false){
     const email=document.getElementById("resetEmail").value.trim();
     btn.disabled=true;btn.textContent="Sending…";
     try{
-      const redirectTo=`${window.location.origin}${window.location.pathname}`;
+      const redirectTo=`${window.location.origin}${window.location.pathname}?reset=1`;
       const result=await authClient.requestPasswordReset({email,redirectTo});
       if(result?.error)throw new Error(result.error.message||"Could not send reset email");
       renderForgotPassword("If that email belongs to an account, a password reset link has been sent. Check your inbox and spam folder.",false);
@@ -1404,7 +1429,34 @@ function showNeverCalvedModal(){
     });
   });
 }
-function showFarmMenu(){openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="activityLog">Activity</button><button class="soft" id="farmProfile">Farm profile</button><button class="soft" id="logout">Log out</button></div></div>`,()=>{document.getElementById("closeMenu").onclick=closeModal;document.getElementById("activityLog").onclick=()=>{closeModal();view.page="activity";activityLoaded=false;activityError="";render();syncActivityFromNeon()};document.getElementById("farmProfile").onclick=showFarmProfile;document.getElementById("logout").onclick=async()=>{const btn=document.getElementById("logout");btn.disabled=true;btn.textContent="Logging out…";try{await authClient.signOut()}catch(err){console.error("Neon Auth sign out failed",err)}authSession=null;state.currentUser="";saveState();closeModal();view.page="login";render()}})}
+async function installPwa(){
+  if(isStandalone()){alert("Cattle Records is already installed on this device.");return;}
+  if(deferredInstallPrompt){
+    const prompt=deferredInstallPrompt;
+    deferredInstallPrompt=null;
+    await prompt.prompt();
+    await prompt.userChoice.catch(()=>null);
+    return;
+  }
+  const android=/Android/i.test(navigator.userAgent);
+  const ios=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if(android){
+    alert('To install Cattle Records, open your browser menu (⋮) and choose "Add to Home screen" or "Install app".');
+  }else if(ios){
+    alert('To install Cattle Records, tap Share and then "Add to Home Screen".');
+  }else{
+    alert('Use your browser's "Install app" or "Add to Home screen" option.');
+  }
+}
+function registerServiceWorker(){
+  if(!("serviceWorker" in navigator))return;
+  window.addEventListener("load",()=>{
+    navigator.serviceWorker.register("./service-worker.js").catch(err=>console.error("Service worker registration failed",err));
+  });
+}
+registerServiceWorker();
+function showFarmMenu(){openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Account</p><h2>${esc(state.currentUser)}</h2></div><button class="icon-button" id="closeMenu">×</button></div><div class="menu-list"><button class="soft" id="activityLog">Activity</button><button class="soft" id="farmProfile">Farm profile</button>${!isStandalone()?'<button class="soft" id="installApp">Install app</button>':''}<button class="soft" id="logout">Log out</button></div></div>`,()=>{document.getElementById("closeMenu").onclick=closeModal;document.getElementById("activityLog").onclick=()=>{closeModal();view.page="activity";activityLoaded=false;activityError="";render();syncActivityFromNeon()};document.getElementById("farmProfile").onclick=showFarmProfile;const installBtn=document.getElementById("installApp");if(installBtn)installBtn.onclick=async()=>{closeModal();await installPwa()};document.getElementById("logout").onclick=async()=>{const btn=document.getElementById("logout");btn.disabled=true;btn.textContent="Logging out…";try{await authClient.signOut()}catch(err){console.error("Neon Auth sign out failed",err)}authSession=null;state.currentUser="";saveState();closeModal();view.page="login";render()}})}
+
 function showFarmProfile(){openModal(`<form class="modal-card" id="farmProfileForm"><p class="eyebrow">Settings</p><h2>Farm profile</h2><div class="stack"><label><span>Farm name</span><input id="farmNameInput" maxlength="100" value="${attr(state.farmName||"")}"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelFarm">Cancel</button><button type="submit" class="primary">Save</button></div></form>`,()=>{document.getElementById("cancelFarm").onclick=closeModal;document.getElementById("farmProfileForm").onsubmit=e=>{e.preventDefault();state.farmName=document.getElementById("farmNameInput").value.trim()||"Cattle Records";saveState();closeModal();render()}})}
 function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Options</h2><div class="menu-list" style="margin-top:14px"><button class="soft" id="editCow">Edit brand number</button><button class="danger" id="deleteCow">Delete cow</button><button class="soft" id="closeCowMenu">Cancel</button></div></div>`,()=>{
   document.getElementById("closeCowMenu").onclick=closeModal;
