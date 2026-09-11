@@ -1139,6 +1139,17 @@ button:disabled{opacity:.65;cursor:default}
 .activity-error{color:var(--danger)}
 @keyframes activitySpin{to{transform:rotate(360deg)}}
 @media(max-width:420px){.activity-item{grid-template-columns:38px 1fr;padding:11px 12px}.activity-icon{width:38px;height:38px;border-radius:12px}.activity-description{font-size:.86rem}.activity-meta{font-size:.67rem}}
+.activity-header-actions{display:flex;align-items:center;gap:7px;flex-shrink:0}
+.activity-item.activity-admin-item{grid-template-columns:42px 1fr auto}
+.activity-delete-entry{align-self:center;border:0;background:var(--danger-soft);color:var(--danger);font:inherit;font-weight:750;font-size:.68rem;padding:8px 9px;border-radius:11px;cursor:pointer}
+.activity-delete-entry:disabled{opacity:.55;cursor:default}
+.danger-soft{border:0;background:var(--danger-soft);color:var(--danger);font:inherit;font-weight:800;border-radius:14px;padding:10px 14px}
+.activity-clear-option[hidden]{display:none!important}
+.activity-days-row{display:flex;align-items:center;gap:10px}
+.activity-days-row input{flex:1;min-width:0}
+.activity-days-row span{color:var(--muted);font-size:.85rem;white-space:nowrap}
+@media(max-width:420px){.activity-item.activity-admin-item{grid-template-columns:38px 1fr auto}.activity-delete-entry{font-size:.64rem;padding:7px 8px}.activity-header-actions{gap:5px}.activity-header-actions .small{padding-left:10px;padding-right:10px}}
+
 
 
 /* V42: saved-session startup + PWA install polish */

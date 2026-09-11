@@ -674,12 +674,14 @@ function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.times
 function activityIcon(type){return type==="cow"?"🐄":type==="calf"?"🐮":type==="owner"?"👤":"•"}
 function activityActionLabel(action){return action==="created"?"Added":action==="deleted"?"Deleted":"Updated"}
 function renderActivity(){
-  const rows=activityEntries.map(item=>`<article class="activity-item activity-${attr(item.action)}">
+  const isAdmin=adminAccess===true;
+  const rows=activityEntries.map(item=>`<article class="activity-item activity-${attr(item.action)}${isAdmin?' activity-admin-item':''}">
     <div class="activity-icon" aria-hidden="true">${activityIcon(item.entityType)}</div>
     <div class="activity-copy">
       <div class="activity-description">${esc(item.description)}</div>
       <div class="activity-meta"><span>${esc(activityActionLabel(item.action))} ${esc(item.entityType)}</span><span>·</span><time datetime="${attr(item.createdAt||"")}">${item.createdAt?esc(formatDateTime(item.createdAt)):"Unknown time"}</time></div>
     </div>
+    ${isAdmin?`<button class="activity-delete-entry" type="button" data-delete-activity="${attr(item.id)}" aria-label="Delete activity entry" title="Delete activity entry">Delete</button>`:""}
   </article>`).join("");
   usePage(`<main class="screen activity-screen">
     <header class="topbar">
@@ -687,9 +689,12 @@ function renderActivity(){
         <button class="icon-button" id="backActivity">←</button>
         <div><p class="eyebrow">${esc(state.farmName||"Farm")}</p><h1 class="page-title">Activity</h1></div>
       </div>
-      <button class="soft small" id="refreshActivity" type="button">Refresh</button>
+      <div class="activity-header-actions">
+        ${isAdmin?'<button class="danger-soft small" id="clearActivity" type="button">Clear</button>':''}
+        <button class="soft small" id="refreshActivity" type="button">Refresh</button>
+      </div>
     </header>
-    <p class="activity-intro">Cattle record changes made by farm users.</p>
+    <p class="activity-intro">Cattle record changes made by farm users.${isAdmin?' Admins can remove individual entries or clear older history.':''}</p>
     <section class="activity-list">
       ${!activityLoaded?`<div class="activity-status"><span class="activity-spinner" aria-hidden="true"></span><span>Loading activity…</span></div>`:activityError?`<div class="empty activity-error"><strong>Could not load activity.</strong><br>${esc(activityError)}</div>`:rows||`<div class="empty"><strong>No activity yet.</strong><br>New cattle, calf, and owner changes will appear here.</div>`}
     </section>
@@ -700,6 +705,93 @@ function renderActivity(){
     btn.disabled=true;btn.textContent="Refreshing…";
     await syncActivityFromNeon();
   };
+  const clearBtn=document.getElementById("clearActivity");
+  if(clearBtn)clearBtn.onclick=showClearActivityModal;
+  document.querySelectorAll("[data-delete-activity]").forEach(btn=>{
+    btn.onclick=async()=>{
+      const id=btn.dataset.deleteActivity;
+      const item=activityEntries.find(entry=>String(entry.id)===String(id));
+      const label=item?.description||"this activity entry";
+      if(!confirm(`Delete "${label}" from Activity? This cannot be undone.`))return;
+      btn.disabled=true;btn.textContent="Deleting…";
+      try{
+        const response=await apiFetch(`/api/activity/${encodeURIComponent(id)}`,{method:"DELETE"});
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete activity");
+        activityEntries=activityEntries.filter(entry=>String(entry.id)!==String(id));
+        renderActivity();
+      }catch(err){
+        alert(`Could not delete activity. ${err.message}`);
+        btn.disabled=false;btn.textContent="Delete";
+      }
+    };
+  });
+}
+
+function showClearActivityModal(){
+  if(adminAccess!==true)return;
+  openModal(`<form class="modal-card" id="clearActivityForm">
+    <div class="section-heading"><div><p class="eyebrow">Activity</p><h2>Clear history</h2></div><button class="icon-button" id="closeClearActivity" type="button">×</button></div>
+    <p class="muted admin-modal-copy">Choose how much activity history to permanently remove. Cattle, calf, and owner records themselves are not affected.</p>
+    <div class="stack">
+      <label><span>Delete</span><select id="clearActivityMode">
+        <option value="older_7">Older than 7 days</option>
+        <option value="older_30" selected>Older than 30 days</option>
+        <option value="older_90">Older than 90 days</option>
+        <option value="older_365">Older than 1 year</option>
+        <option value="custom_days">Older than a custom number of days</option>
+        <option value="before_date">Before a specific date</option>
+        <option value="all">All activity</option>
+      </select></label>
+      <label class="activity-clear-option" id="customDaysWrap" hidden><span>Older than</span><div class="activity-days-row"><input id="customActivityDays" type="number" inputmode="numeric" min="1" max="3650" value="30"><span>days</span></div></label>
+      <label class="activity-clear-option" id="beforeDateWrap" hidden><span>Delete entries before</span><input id="activityBeforeDate" type="date"></label>
+    </div>
+    <div class="modal-actions"><button class="soft" id="cancelClearActivity" type="button">Cancel</button><button class="danger" id="confirmClearActivity" type="submit">Delete activity</button></div>
+  </form>`,()=>{
+    const form=document.getElementById("clearActivityForm");
+    const mode=document.getElementById("clearActivityMode");
+    const customWrap=document.getElementById("customDaysWrap");
+    const dateWrap=document.getElementById("beforeDateWrap");
+    const close=()=>closeModal();
+    document.getElementById("closeClearActivity").onclick=close;
+    document.getElementById("cancelClearActivity").onclick=close;
+    const updateFields=()=>{
+      customWrap.hidden=mode.value!=="custom_days";
+      dateWrap.hidden=mode.value!=="before_date";
+    };
+    mode.onchange=updateFields;updateFields();
+    form.onsubmit=async event=>{
+      event.preventDefault();
+      let body;let wording;
+      if(mode.value.startsWith("older_")){
+        const days=Number(mode.value.split("_")[1]);
+        body={mode:"older_than_days",days};wording=`activity older than ${days} days`;
+      }else if(mode.value==="custom_days"){
+        const days=Number(document.getElementById("customActivityDays").value);
+        if(!Number.isInteger(days)||days<1||days>3650){alert("Enter a whole number of days from 1 to 3650.");return}
+        body={mode:"older_than_days",days};wording=`activity older than ${days} days`;
+      }else if(mode.value==="before_date"){
+        const beforeDate=document.getElementById("activityBeforeDate").value;
+        if(!beforeDate){alert("Choose a date first.");return}
+        body={mode:"before_date",before_date:beforeDate};wording=`activity before ${beforeDate}`;
+      }else{
+        body={mode:"all"};wording="ALL activity history";
+      }
+      if(!confirm(`Permanently delete ${wording}? This cannot be undone.`))return;
+      const btn=document.getElementById("confirmClearActivity");btn.disabled=true;btn.textContent="Deleting…";
+      try{
+        const response=await apiFetch("/api/activity/clear",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not clear activity");
+        closeModal();
+        await syncActivityFromNeon();
+        alert(`${Number(data.deleted)||0} activity ${Number(data.deleted)===1?"entry":"entries"} deleted.`);
+      }catch(err){
+        alert(`Could not clear activity. ${err.message}`);
+        btn.disabled=false;btn.textContent="Delete activity";
+      }
+    };
+  });
 }
 
 function renderCattle(){
@@ -1686,7 +1778,7 @@ async function getPushRegistration(){
   if(!pushNotificationsSupported())throw new Error("Push notifications are not supported on this device/browser.");
   let registration=await navigator.serviceWorker.getRegistration();
   if(!registration){
-    registration=await navigator.serviceWorker.register("./service-worker.js?v=49",{updateViaCache:"none"});
+    registration=await navigator.serviceWorker.register("./service-worker.js?v=50",{updateViaCache:"none"});
   }
   if(!registration.active){
     const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error("The app service worker is still starting. Close and reopen Cattle Records, then try again.")),8000));
@@ -1813,7 +1905,7 @@ async function installPwa(){
 function registerServiceWorker(){
   if(!("serviceWorker" in navigator))return;
   window.addEventListener("load",()=>{
-    navigator.serviceWorker.register("./service-worker.js?v=49",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
+    navigator.serviceWorker.register("./service-worker.js?v=50",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
   });
 }
 registerServiceWorker();
