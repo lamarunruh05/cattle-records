@@ -1,9 +1,9 @@
-const CACHE_NAME="cattle-records-shell-v44";
+const CACHE_NAME="cattle-records-shell-v45";
 const SHELL=[
   "./index.html",
-  "./styles.css?v=44",
-  "./app.js?v=44",
-  "./manifest.webmanifest?v=44",
+  "./styles.css?v=45",
+  "./app.js?v=45",
+  "./manifest.webmanifest?v=45",
   "./ranch-scene.jpg",
   "./icon-192.png",
   "./icon-512.png",

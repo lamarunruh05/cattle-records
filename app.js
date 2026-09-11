@@ -354,6 +354,7 @@ function attr(v=""){return esc(v).replace(/`/g,"&#096;")}
 function usePage(html){
   document.body.classList.toggle("cow-layout",html.includes('class="cow-page-fixed"'));
   document.body.classList.toggle("chat-layout",html.includes('class="screen chat-screen"'));
+  document.body.classList.toggle("home-layout",html.includes('class="screen home-screen"'));
   app.innerHTML=html;
   modalRoot.innerHTML="";
 }

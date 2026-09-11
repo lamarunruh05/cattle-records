@@ -1149,3 +1149,54 @@ button:disabled{opacity:.65;cursor:default}
 .auth-loading-dots span:nth-child(3){animation-delay:.32s}
 @keyframes authDot{0%,80%,100%{transform:scale(.72);opacity:.25}40%{transform:scale(1);opacity:.75}}
 @media (display-mode:standalone){body{overscroll-behavior-y:none}}
+
+
+/* V45 — fixed one-screen PWA home dashboard */
+body.home-layout{
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  overscroll-behavior:none;
+}
+body.home-layout #app{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+}
+body.home-layout .home-screen{
+  position:absolute;
+  inset:0;
+  width:min(760px,100%);
+  height:auto;
+  min-height:0;
+  max-height:none;
+  margin:0 auto;
+  padding-top:calc(14px + env(safe-area-inset-top));
+  padding-bottom:0;
+  overflow:hidden;
+  overscroll-behavior:none;
+}
+body.home-layout .home-ranch-scene{
+  min-height:0;
+  flex:1 1 0;
+  margin-bottom:0;
+}
+@media(max-width:420px){
+  body.home-layout .home-screen{
+    padding-top:calc(12px + env(safe-area-inset-top));
+  }
+}
+@media(max-height:700px){
+  body.home-layout .home-screen .app-brand{font-size:1rem;margin-bottom:8px;padding-bottom:8px}
+  body.home-layout .home-screen .farm-name{font-size:2.12rem}
+  body.home-layout .home-screen .topbar{margin-bottom:8px}
+  body.home-layout .home-screen .home-actions{gap:9px}
+  body.home-layout .home-screen .home-card{min-height:76px;padding:9px 14px}
+  body.home-layout .home-screen .home-card-icon{width:42px;height:42px}
+  body.home-layout .home-screen .home-summary{margin-top:8px;padding-top:8px;padding-bottom:4px}
+  body.home-layout .home-ranch-scene{min-height:70px}
+}
