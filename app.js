@@ -1445,13 +1445,13 @@ async function installPwa(){
   }else if(ios){
     alert('To install Cattle Records, tap Share and then "Add to Home Screen".');
   }else{
-    alert('Use your browser's "Install app" or "Add to Home screen" option.');
+    alert("Use your browser's \"Install app\" or \"Add to Home screen\" option.");
   }
 }
 function registerServiceWorker(){
   if(!("serviceWorker" in navigator))return;
   window.addEventListener("load",()=>{
-    navigator.serviceWorker.register("./service-worker.js",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
+    navigator.serviceWorker.register("./service-worker.js?v=44",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
   });
 }
 registerServiceWorker();
