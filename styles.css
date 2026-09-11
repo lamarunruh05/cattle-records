@@ -1243,3 +1243,29 @@ body.home-layout .home-ranch-scene{
 .invite-ready-card .muted{font-size:.8rem}.invite-link-box{margin-top:14px;padding:11px 12px;border-radius:12px;background:rgba(228,214,194,.42);border:1px solid rgba(91,75,55,.12);font-size:.7rem;line-height:1.4;word-break:break-all;color:var(--muted)}
 .invite-share-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}
 @media(max-width:420px){.admin-hero{align-items:flex-start;flex-direction:column}.admin-hero .primary{width:100%}.farm-user-card{grid-template-columns:38px minmax(0,1fr) 36px;padding:10px 11px}.farm-user-avatar{width:38px;height:38px;border-radius:12px}.pending-invite-card{align-items:flex-start;flex-direction:column}.pending-invite-actions{width:100%}.pending-invite-actions .soft{flex:1}.invite-card{padding:24px 20px}}
+
+/* V51 — ranch background layout correction
+   Keep the entire width of the ranch artwork visible so the slogan is never
+   clipped, and let the warm background fill any extra height naturally. */
+body.home-layout .home-ranch-scene{
+  background-color:#d9b77f;
+  background-size:100% auto;
+  background-position:center bottom;
+  background-repeat:no-repeat;
+}
+body.home-layout .home-ranch-scene::before{
+  /* Soften the transition from the dashboard into the top of the photo. */
+  background:linear-gradient(
+    180deg,
+    rgba(222,187,137,.98) 0%,
+    rgba(222,187,137,.68) 10%,
+    rgba(222,187,137,.24) 24%,
+    transparent 40%
+  );
+}
+@media(max-width:420px){
+  body.home-layout .home-ranch-scene{
+    background-size:100% auto;
+    background-position:center bottom;
+  }
+}
