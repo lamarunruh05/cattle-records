@@ -1094,7 +1094,7 @@ function renderWorstPerformance(){
   const statusCell=(status)=>{
     if(status==="live")return '<span class="performance-status performance-live" title="Live calf" aria-label="Live calf">✓</span>';
     if(status==="dead")return '<span class="performance-status performance-dead" title="Calf died" aria-label="Calf died">✕</span>';
-    if(status==="na")return '<span class="performance-status performance-na" title="Not yet eligible" aria-label="Not yet eligible">—</span>';
+    if(status==="na")return '<span class="performance-status performance-na" title="Not yet eligible" aria-label="Not yet eligible"></span>';
     return '<span class="performance-status performance-missed" title="Did not calve" aria-label="Did not calve"></span>';
   };
   const statusTdClass=(status)=>status==="na"?"performance-cell-na":status==="missed"?"performance-cell-missed":"";
@@ -1111,7 +1111,7 @@ function renderWorstPerformance(){
         <td class="performance-current">${row.currentMonth?esc(row.currentMonth):"—"}</td>
       </tr>`).join(""):`<tr><td colspan="9" class="performance-empty">No cows have completed-year calving history yet.</td></tr>`}</tbody>
     </table></div>
-    <div class="performance-legend"><span><b class="legend-check">✓</b> live calf</span><span><b class="legend-dead">✕</b> calf died</span><span><b class="legend-blank"></b> no calf</span><span><b class="legend-na">—</b> not yet eligible</span></div>
+    <div class="performance-legend"><span><b class="legend-check">✓</b> live calf</span><span><b class="legend-dead">✕</b> calf died</span><span><b class="legend-blank"></b> no calf</span><span><b class="legend-na"></b> not yet eligible</span></div>
     <p class="herd-score-note">Live % = years with a live calf ÷ eligible completed years. A cow becomes eligible in the year of her first recorded calf. Current-year calving month is excluded from the percentage and ranking.</p>
   </main>`);
   document.getElementById("backScorecard").onclick=()=>{view.page="herdScorecard";render()};
