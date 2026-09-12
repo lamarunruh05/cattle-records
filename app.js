@@ -1094,18 +1094,19 @@ function renderWorstPerformance(){
   const statusCell=(status)=>{
     if(status==="live")return '<span class="performance-status performance-live" title="Live calf" aria-label="Live calf">✓</span>';
     if(status==="dead")return '<span class="performance-status performance-dead" title="Calf died" aria-label="Calf died">✕</span>';
-    if(status==="na")return '<span class="performance-status performance-na" title="Not yet eligible">—</span>';
+    if(status==="na")return '<span class="performance-status performance-na" title="Not yet eligible" aria-label="Not yet eligible">—</span>';
     return '<span class="performance-status performance-missed" title="Did not calve" aria-label="Did not calve"></span>';
   };
+  const statusTdClass=(status)=>status==="na"?"performance-cell-na":status==="missed"?"performance-cell-missed":"";
   usePage(`<main class="screen performance-screen">
     <header class="topbar"><div class="back-title"><button class="icon-button" id="backScorecard">←</button><div><p class="eyebrow">Herd Scorecard</p><h1 class="page-title">Worst performers</h1></div></div></header>
     <p class="performance-intro">The 20 lowest live-calf rates from the five completed years ${yearRange}. The current year is shown only for reference and does not affect ranking.</p>
     <div class="performance-table-wrap"><table class="performance-table">
-      <thead><tr><th>#</th><th>Cow</th>${years.map(y=>`<th>${y}</th>`).join("")}<th>Live %</th><th class="performance-current-head">${currentYear()} calf</th></tr></thead>
+      <thead><tr><th>#</th><th>Cow</th>${years.map(y=>`<th>${y}</th>`).join("")}<th>%</th><th class="performance-current-head">${currentYear()}</th></tr></thead>
       <tbody>${rows.length?rows.map((row,index)=>`<tr>
         <td class="performance-rank">${index+1}</td>
         <td><button class="performance-cow-link" data-performance-cow="${attr(row.cow.id)}">${esc(row.cow.brand)}</button></td>
-        ${years.map(y=>`<td>${statusCell(row.byYear[y])}</td>`).join("")}
+        ${years.map(y=>`<td class="${statusTdClass(row.byYear[y])}">${statusCell(row.byYear[y])}</td>`).join("")}
         <td class="performance-pct">${Math.round(row.livePct)}%</td>
         <td class="performance-current">${row.currentMonth?esc(row.currentMonth):"—"}</td>
       </tr>`).join(""):`<tr><td colspan="9" class="performance-empty">No cows have completed-year calving history yet.</td></tr>`}</tbody>

@@ -1,4 +1,4 @@
-const CACHE_NAME="cattle-records-shell-v52";
+const CACHE_NAME="cattle-records-shell-v53";
 const SHELL=[
   "./index.html",
   "./styles.css?v=52",
