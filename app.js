@@ -31,8 +31,12 @@ const initialData={
 };
 let state=loadState();
 if(!Array.isArray(state.owners))state.owners=[];
-let view={page:"login",cowId:null,ownerFilter:"",search:""};
+let view={page:"login",cowId:null,ownerFilter:"",search:"",listId:null,cowReturnPage:"cattle",cowReturnListId:null};
 let pendingPhoto=null;
+let cowLists=[];
+let cowListsLoaded=false;
+let cowListsError="";
+let cowListsSyncInFlight=null;
 let activityEntries=[];
 let activityLoaded=false;
 let activityError="";
@@ -170,6 +174,60 @@ async function publicApiFetch(path,options={}){
   const headers=new Headers(options.headers||{});
   if(!headers.has("Accept"))headers.set("Accept","application/json");
   return fetch(`${API_BASE}${path}`,{...options,headers});
+}
+async function syncCowListsFromNeon({rerender=false}={}){
+  if(cowListsSyncInFlight)return cowListsSyncInFlight;
+  cowListsError="";
+  cowListsSyncInFlight=(async()=>{
+    try{
+      const response=await apiFetch("/api/lists",{headers:{Accept:"application/json"},cache:"no-store"});
+      const data=await response.json();
+      if(!response.ok||!data.ok||!Array.isArray(data.lists))throw new Error(data.error||data.message||"Could not load lists");
+      cowLists=data.lists.map(list=>({
+        id:list.id,
+        name:String(list.name||"Untitled list"),
+        createdBy:list.created_by||null,
+        createdByName:list.created_by_name||"",
+        createdAt:list.created_at||null,
+        updatedAt:list.updated_at||null,
+        cows:Array.isArray(list.cows)?list.cows.map(item=>({
+          cowId:item.cow_id,
+          brand:String(item.brand_number||""),
+          addedBy:item.added_by||null,
+          addedByName:item.added_by_name||"",
+          addedAt:item.added_at||null
+        })):[]
+      }));
+      cowListsLoaded=true;
+      cowListsError="";
+      if(rerender&&["lists","listDetail"].includes(view.page))render();
+      return true;
+    }catch(err){
+      console.error("Could not sync cow lists from Neon",err);
+      cowListsLoaded=true;
+      cowListsError=err?.message||"Could not load lists";
+      if(rerender&&["lists","listDetail"].includes(view.page))render();
+      return false;
+    }finally{cowListsSyncInFlight=null}
+  })();
+  return cowListsSyncInFlight;
+}
+function cowListById(id){return cowLists.find(list=>String(list.id)===String(id))||null}
+async function createCowList(name){
+  const clean=String(name||"").trim();
+  if(!clean)throw new Error("List name is required");
+  const response=await apiFetch("/api/lists",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:clean})});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not create list");
+  await syncCowListsFromNeon({rerender:false});
+  return cowListById(data.list?.id)||data.list;
+}
+async function addCowToList(listId,cowId){
+  const response=await apiFetch(`/api/lists/${encodeURIComponent(listId)}/cows`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cow_id:cowId})});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not add cow to list");
+  await syncCowListsFromNeon({rerender:false});
+  return data;
 }
 async function verifyFarmAccess(){
   try{
@@ -600,7 +658,7 @@ function usePage(html){
   app.innerHTML=html;
   modalRoot.innerHTML="";
 }
-function render(){if(view.page==="login")return renderLogin();if(view.page==="forgotPassword")return renderForgotPassword();if(view.page==="resetPassword")return renderResetPassword(new URLSearchParams(window.location.search).get("token")||"");if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="chat")return renderChat();if(view.page==="activity")return renderActivity();if(view.page==="adminUsers")return renderAdminUsers();return renderHome()}
+function render(){if(view.page==="login")return renderLogin();if(view.page==="forgotPassword")return renderForgotPassword();if(view.page==="resetPassword")return renderResetPassword(new URLSearchParams(window.location.search).get("token")||"");if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="worstPerformance")return renderWorstPerformance();if(view.page==="lists")return renderLists();if(view.page==="listDetail")return renderListDetail();if(view.page==="chat")return renderChat();if(view.page==="activity")return renderActivity();if(view.page==="adminUsers")return renderAdminUsers();return renderHome()}
 function renderLogin(errorMessage=""){
   usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with your farm account.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<form class="stack" id="emailLoginForm"><label class="field"><span>Email</span><input id="loginEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><label class="field"><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Password"></label><button class="primary" id="emailLoginBtn" type="submit">Sign in</button><button class="auth-link" id="forgotPasswordBtn" type="button">Forgot password?</button></form></section></main>`);
   document.getElementById("forgotPasswordBtn").onclick=()=>{view.page="forgotPassword";render()};
@@ -668,11 +726,19 @@ function renderResetPassword(token,message="",isError=false){
     }catch(err){console.error("Password reset failed",err);renderResetPassword(token,err.message||"Could not reset password",true);}
   };
 }
-function renderHome(){const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null,calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length,dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>
+function renderHome(){
+  const latest=[...state.notes].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]||null;
+  const calved=state.cows.filter(c=>latestCurrentYearCalf(c)).length;
+  const dead=state.cows.filter(c=>(latestCurrentYearCalf(c)&&latestCurrentYearCalf(c).dead)).length;
+  usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button><button class="home-card" id="openLists"><div class="home-card-row"><div class="home-card-icon">📋</div><div class="home-card-copy"><div class="home-card-title">Lists</div><div class="home-card-sub">Shared cow lists for this farm</div></div><span class="chevron">›</span></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>
 <section class="home-ranch-scene" aria-hidden="true"></section>
-</main>`);document.getElementById("openCattle").onclick=()=>{view.page="cattle";render();syncCowsFromNeon()};document.getElementById("openChat").onclick=()=>{view.page="chat";render();syncMessagesFromNeon()};document.getElementById("menuBtn").onclick=showFarmMenu}
-function activityIcon(type){return type==="cow"?"🐄":type==="calf"?"🐮":type==="owner"?"👤":"•"}
-function activityActionLabel(action){return action==="created"?"Added":action==="deleted"?"Deleted":"Updated"}
+</main>`);
+  document.getElementById("openCattle").onclick=()=>{view.page="cattle";render();syncCowsFromNeon()};
+  document.getElementById("openChat").onclick=()=>{view.page="chat";render()};
+  document.getElementById("openLists").onclick=()=>{view.page="lists";cowListsLoaded=false;cowListsError="";render();syncCowListsFromNeon({rerender:true})};
+  document.getElementById("menuBtn").onclick=showFarmMenu;
+}
+
 function renderActivity(){
   const isAdmin=adminAccess===true;
   const rows=activityEntries.map(item=>`<article class="activity-item activity-${attr(item.action)}${isAdmin?' activity-admin-item':''}">
@@ -856,6 +922,8 @@ function renderCattle(){
 
   document.querySelectorAll("[data-cow]").forEach(b=>b.onclick=()=>{
     view.cowId=b.dataset.cow;
+    view.cowReturnPage="cattle";
+    view.cowReturnListId=null;
     view.page="cow";
     render();
   });
@@ -913,7 +981,7 @@ function renderCow(){
     </section>
   </main>`);
 
-  document.getElementById("backCattle").onclick=()=>{view.page="cattle";render()};
+  document.getElementById("backCattle").onclick=()=>{view.page=view.cowReturnPage||"cattle";if(view.page==="listDetail"&&view.cowReturnListId)view.listId=view.cowReturnListId;render()};
   document.getElementById("ownerInput").onchange=async e=>{
     const input=e.target,oldOwner=cow.owner||"",oldOwnerId=cow.ownerId||null,newName=input.value.trim();
     input.disabled=true;
@@ -971,16 +1039,169 @@ function renderHerdScorecard(){
     </table></div>
     <p class="herd-score-note">A cow starts counting in the year of her first recorded calf and remains eligible in each following year.</p>
 
-    <button class="never-calved-btn" id="neverCalvedBtn">
-      <span>
-        <strong>${state.cows.filter(c=>!c.calves||c.calves.length===0).length}</strong>
-        cows have never calved
-      </span>
-      <span>View cows ›</span>
-    </button>
+    <div class="herd-bottom-actions">
+      <button class="never-calved-btn" id="neverCalvedBtn">
+        <span><strong>${state.cows.filter(c=>!c.calves||c.calves.length===0).length}</strong> cows have never calved</span>
+        <span>View cows ›</span>
+      </button>
+      <button class="never-calved-btn performance-list-btn" id="worstPerformanceBtn">
+        <span><strong>20</strong> worst-performing cows</span>
+        <span>View ›</span>
+      </button>
+    </div>
   </main>`);
   document.getElementById("backCattle").onclick=()=>{view.page="cattle";render()};
   document.getElementById("neverCalvedBtn").onclick=showNeverCalvedModal;
+  document.getElementById("worstPerformanceBtn").onclick=()=>{view.page="worstPerformance";render()};
+}
+function performanceRows(){
+  const endYear=currentYear()-1;
+  const startYear=endYear-4;
+  const years=Array.from({length:5},(_,i)=>startYear+i);
+  const rows=[];
+  for(const cow of state.cows){
+    const calves=Array.isArray(cow.calves)?cow.calves:[];
+    if(!calves.length)continue;
+    const firstYear=Math.min(...calves.map(c=>Number(c.year)).filter(Number.isFinite));
+    const eligibleYears=years.filter(year=>year>=firstYear);
+    if(!eligibleYears.length)continue;
+    let liveYears=0,missedYears=0,deadYears=0;
+    const byYear={};
+    for(const year of years){
+      if(year<firstYear){byYear[year]="na";continue}
+      const yearCalves=calves.filter(c=>Number(c.year)===year);
+      if(!yearCalves.length){byYear[year]="missed";missedYears++;continue}
+      const hasLive=yearCalves.some(c=>!c.dead);
+      if(hasLive){byYear[year]="live";liveYears++}
+      else{byYear[year]="dead";deadYears++}
+    }
+    const livePct=liveYears/eligibleYears.length*100;
+    const currentCalf=sortedCalves(cow).find(c=>Number(c.year)===currentYear())||null;
+    rows.push({cow,firstYear,eligibleYears:eligibleYears.length,liveYears,missedYears,deadYears,livePct,byYear,currentMonth:currentCalf?monthName(Number(currentCalf.month)):""});
+  }
+  rows.sort((a,b)=>
+    (a.livePct-b.livePct)||
+    (b.missedYears-a.missedYears)||
+    (b.eligibleYears-a.eligibleYears)||
+    (b.deadYears-a.deadYears)||
+    a.cow.brand.localeCompare(b.cow.brand,undefined,{numeric:true,sensitivity:"base"})
+  );
+  return{years,rows:rows.slice(0,20)};
+}
+function renderWorstPerformance(){
+  const {years,rows}=performanceRows();
+  const yearRange=`${years[0]}–${years[years.length-1]}`;
+  const statusCell=(status)=>{
+    if(status==="live")return '<span class="performance-status performance-live" title="Live calf" aria-label="Live calf">✓</span>';
+    if(status==="dead")return '<span class="performance-status performance-dead" title="Calf died" aria-label="Calf died">✕</span>';
+    if(status==="na")return '<span class="performance-status performance-na" title="Not yet eligible">—</span>';
+    return '<span class="performance-status performance-missed" title="Did not calve" aria-label="Did not calve"></span>';
+  };
+  usePage(`<main class="screen performance-screen">
+    <header class="topbar"><div class="back-title"><button class="icon-button" id="backScorecard">←</button><div><p class="eyebrow">Herd Scorecard</p><h1 class="page-title">Worst performers</h1></div></div></header>
+    <p class="performance-intro">The 20 lowest live-calf rates from the five completed years ${yearRange}. The current year is shown only for reference and does not affect ranking.</p>
+    <div class="performance-table-wrap"><table class="performance-table">
+      <thead><tr><th>#</th><th>Cow</th>${years.map(y=>`<th>${y}</th>`).join("")}<th>Live %</th><th class="performance-current-head">${currentYear()} calf</th></tr></thead>
+      <tbody>${rows.length?rows.map((row,index)=>`<tr>
+        <td class="performance-rank">${index+1}</td>
+        <td><button class="performance-cow-link" data-performance-cow="${attr(row.cow.id)}">${esc(row.cow.brand)}</button></td>
+        ${years.map(y=>`<td>${statusCell(row.byYear[y])}</td>`).join("")}
+        <td class="performance-pct">${Math.round(row.livePct)}%</td>
+        <td class="performance-current">${row.currentMonth?esc(row.currentMonth):"—"}</td>
+      </tr>`).join(""):`<tr><td colspan="9" class="performance-empty">No cows have completed-year calving history yet.</td></tr>`}</tbody>
+    </table></div>
+    <div class="performance-legend"><span><b class="legend-check">✓</b> live calf</span><span><b class="legend-dead">✕</b> calf died</span><span><b class="legend-blank"></b> no calf</span><span><b class="legend-na">—</b> not yet eligible</span></div>
+    <p class="herd-score-note">Live % = years with a live calf ÷ eligible completed years. A cow becomes eligible in the year of her first recorded calf. Current-year calving month is excluded from the percentage and ranking.</p>
+  </main>`);
+  document.getElementById("backScorecard").onclick=()=>{view.page="herdScorecard";render()};
+  document.querySelectorAll("[data-performance-cow]").forEach(button=>button.onclick=()=>{
+    view.cowId=button.dataset.performanceCow;
+    view.cowReturnPage="worstPerformance";
+    view.cowReturnListId=null;
+    view.page="cow";
+    render();
+  });
+}
+function renderLists(){
+  usePage(`<main class="screen lists-screen">
+    <header class="topbar"><div class="back-title"><button class="icon-button" id="backListsHome">←</button><div><p class="eyebrow">${esc(state.farmName||"Farm")}</p><h1 class="page-title">Lists</h1></div></div><button class="primary small" id="newListBtn">+ New</button></header>
+    ${!cowListsLoaded?'<div class="empty">Loading shared lists…</div>':cowListsError?`<div class="empty"><strong>Could not load lists.</strong><br>${esc(cowListsError)}</div>`:cowLists.length?`<section class="cow-lists-grid">${cowLists.map(list=>`<button class="cow-list-card" data-list-id="${attr(list.id)}"><div><strong>${esc(list.name)}</strong><span>${list.cows.length} ${list.cows.length===1?"cow":"cows"}</span></div><span class="chevron">›</span></button>`).join("")}</section>`:'<div class="empty"><strong>No lists yet.</strong><br>Create a list such as “Cull cows 2026”.</div>'}
+  </main>`);
+  document.getElementById("backListsHome").onclick=()=>{view.page="home";render()};
+  document.getElementById("newListBtn").onclick=()=>showCreateListModal();
+  document.querySelectorAll("[data-list-id]").forEach(button=>button.onclick=()=>{view.listId=button.dataset.listId;view.page="listDetail";render()});
+}
+function renderListDetail(){
+  const list=cowListById(view.listId);
+  if(cowListsLoaded&&!list){view.page="lists";return render()}
+  usePage(`<main class="screen lists-screen">
+    <header class="topbar"><div class="back-title"><button class="icon-button" id="backAllLists">←</button><div><p class="eyebrow">Cow list</p><h1 class="page-title">${esc(list?.name||"Loading…")}</h1></div></div>${list?'<button class="icon-button" id="listMenuBtn">•••</button>':''}</header>
+    ${!list?'<div class="empty">Loading list…</div>':list.cows.length?`<section class="list-cows-grid">${[...list.cows].sort((a,b)=>a.brand.localeCompare(b.brand,undefined,{numeric:true,sensitivity:"base"})).map(item=>`<div class="list-cow-row"><button class="list-cow-open" data-list-cow="${attr(item.cowId)}"><span class="list-cow-number">${esc(item.brand)}</span><span>Open profile ›</span></button><button class="list-cow-remove" data-remove-list-cow="${attr(item.cowId)}" aria-label="Remove cow ${attr(item.brand)} from list">×</button></div>`).join("")}</section>`:'<div class="empty"><strong>No cows in this list yet.</strong><br>Open a cow profile, tap •••, then choose Add to list.</div>'}
+  </main>`);
+  document.getElementById("backAllLists").onclick=()=>{view.page="lists";render()};
+  const menu=document.getElementById("listMenuBtn");if(menu)menu.onclick=()=>showListMenu(list);
+  document.querySelectorAll("[data-list-cow]").forEach(button=>button.onclick=()=>{view.cowId=button.dataset.listCow;view.cowReturnPage="listDetail";view.cowReturnListId=list.id;view.page="cow";render()});
+  document.querySelectorAll("[data-remove-list-cow]").forEach(button=>button.onclick=async()=>{
+    const cowId=button.dataset.removeListCow;
+    const cow=state.cows.find(c=>String(c.id)===String(cowId));
+    if(!confirm(`Remove cow ${cow?.brand||""} from ${list.name}?`))return;
+    button.disabled=true;
+    try{
+      const response=await apiFetch(`/api/lists/${encodeURIComponent(list.id)}/cows/${encodeURIComponent(cowId)}`,{method:"DELETE"});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not remove cow");
+      await syncCowListsFromNeon({rerender:false});
+      render();
+    }catch(err){alert(`Could not remove cow from the list. ${err.message}`);button.disabled=false}
+  });
+}
+function showCreateListModal({cowId=null}={}){
+  openModal(`<form class="modal-card" id="createListForm"><p class="eyebrow">Cow lists</p><h2>Create new list</h2><div class="stack"><label><span>List name</span><input id="newListName" maxlength="100" required placeholder="e.g. Cull cows ${currentYear()}"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelCreateList">Cancel</button><button type="submit" class="primary" id="saveNewList">Create${cowId?" & add cow":""}</button></div></form>`,()=>{
+    document.getElementById("cancelCreateList").onclick=closeModal;
+    document.getElementById("createListForm").onsubmit=async event=>{
+      event.preventDefault();
+      const btn=document.getElementById("saveNewList");
+      const name=document.getElementById("newListName").value.trim();
+      if(!name)return;
+      btn.disabled=true;btn.textContent="Creating…";
+      try{
+        const list=await createCowList(name);
+        if(cowId&&list?.id)await addCowToList(list.id,cowId);
+        closeModal();
+        if(view.page==="lists"||view.page==="listDetail")render();
+      }catch(err){alert(`Could not create list. ${err.message}`);btn.disabled=false;btn.textContent=cowId?"Create & add cow":"Create"}
+    };
+  });
+  requestAnimationFrame(()=>document.getElementById("newListName")?.focus());
+}
+async function showAddToListModal(cow){
+  openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Add to list</h2><p class="muted">Loading shared farm lists…</p></div>`);
+  await syncCowListsFromNeon({rerender:false});
+  openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Add to list</h2></div><button class="icon-button" id="closeAddToList">×</button></div>${cowListsError?`<div class="empty">${esc(cowListsError)}</div>`:`<div class="menu-list add-to-list-choices">${cowLists.map(list=>{const already=list.cows.some(item=>String(item.cowId)===String(cow.id));return `<button class="soft add-list-choice ${already?"already-added":""}" data-add-list="${attr(list.id)}" ${already?"disabled":""}><span>${esc(list.name)}</span><span>${already?"✓ Added":"Add"}</span></button>`}).join("")}<button class="primary" id="createListFromCow">+ Create new list</button></div>`}</div>`,()=>{
+    document.getElementById("closeAddToList").onclick=closeModal;
+    const create=document.getElementById("createListFromCow");if(create)create.onclick=()=>showCreateListModal({cowId:cow.id});
+    document.querySelectorAll("[data-add-list]").forEach(button=>button.onclick=async()=>{
+      const original=button.innerHTML;button.disabled=true;button.innerHTML='<span>Adding…</span>';
+      try{await addCowToList(button.dataset.addList,cow.id);button.innerHTML='<span>Added</span><span>✓</span>';setTimeout(closeModal,350)}
+      catch(err){alert(`Could not add cow to the list. ${err.message}`);button.disabled=false;button.innerHTML=original}
+    });
+  });
+}
+function showListMenu(list){
+  openModal(`<div class="modal-card"><p class="eyebrow">${esc(list.name)}</p><h2>List options</h2><div class="menu-list" style="margin-top:14px"><button class="soft" id="renameList">Rename list</button><button class="danger" id="deleteList">Delete list</button><button class="soft" id="closeListMenu">Cancel</button></div></div>`,()=>{
+    document.getElementById("closeListMenu").onclick=closeModal;
+    document.getElementById("renameList").onclick=()=>{
+      openModal(`<form class="modal-card" id="renameListForm"><p class="eyebrow">Cow list</p><h2>Rename list</h2><div class="stack"><label><span>List name</span><input id="renameListName" maxlength="100" required value="${attr(list.name)}"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelRenameList">Cancel</button><button type="submit" class="primary" id="saveRenameList">Save</button></div></form>`,()=>{
+        document.getElementById("cancelRenameList").onclick=closeModal;
+        document.getElementById("renameListForm").onsubmit=async event=>{event.preventDefault();const btn=document.getElementById("saveRenameList");const name=document.getElementById("renameListName").value.trim();if(!name)return;btn.disabled=true;btn.textContent="Saving…";try{const response=await apiFetch(`/api/lists/${encodeURIComponent(list.id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});const data=await response.json().catch(()=>({}));if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not rename list");await syncCowListsFromNeon({rerender:false});closeModal();render()}catch(err){alert(`Could not rename list. ${err.message}`);btn.disabled=false;btn.textContent="Save"}};
+      });
+    };
+    document.getElementById("deleteList").onclick=async()=>{
+      if(!confirm(`Delete the list “${list.name}”? The cows and their records will not be deleted.`))return;
+      const btn=document.getElementById("deleteList");btn.disabled=true;btn.textContent="Deleting…";
+      try{const response=await apiFetch(`/api/lists/${encodeURIComponent(list.id)}`,{method:"DELETE"});const data=await response.json().catch(()=>({}));if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete list");await syncCowListsFromNeon({rerender:false});closeModal();view.listId=null;view.page="lists";render()}catch(err){alert(`Could not delete list. ${err.message}`);btn.disabled=false;btn.textContent="Delete list"}
+    };
+  });
 }
 function renderScorecard(){
   const cow=state.cows.find(c=>c.id===view.cowId);
@@ -2020,7 +2241,8 @@ function autoSyncPageIsInteractive(){
 }
 function autoSyncSignature(page){
   if(page==="home")return JSON.stringify([state.cows,state.notes]);
-  if(["cattle","cow","scorecard","herdScorecard"].includes(page))return JSON.stringify(state.cows);
+  if(["cattle","cow","scorecard","herdScorecard","worstPerformance"].includes(page))return JSON.stringify(state.cows);
+  if(["lists","listDetail"].includes(page))return JSON.stringify([cowLists,state.cows]);
   if(page==="chat")return JSON.stringify(state.notes);
   if(page==="activity")return JSON.stringify(activityEntries);
   if(page==="adminUsers")return JSON.stringify([farmMembers,farmInvites,adminAccess]);
@@ -2036,8 +2258,10 @@ async function autoSyncCurrentView(){
   try{
     if(page==="home"){
       await Promise.all([syncCowsFromNeon({rerender:false}),syncMessagesFromNeon({rerender:false})]);
-    }else if(["cattle","cow","scorecard","herdScorecard"].includes(page)){
+    }else if(["cattle","cow","scorecard","herdScorecard","worstPerformance"].includes(page)){
       await syncCowsFromNeon({rerender:false});
+    }else if(["lists","listDetail"].includes(page)){
+      await Promise.all([syncCowsFromNeon({rerender:false}),syncCowListsFromNeon({rerender:false})]);
     }else if(page==="chat"){
       await syncMessagesFromNeon({rerender:false});
     }else if(page==="activity"){
@@ -2080,8 +2304,9 @@ function showFarmMenu(){
   });
 }
 function showFarmProfile(){openModal(`<form class="modal-card" id="farmProfileForm"><p class="eyebrow">Settings</p><h2>Farm profile</h2><div class="stack"><label><span>Farm name</span><input id="farmNameInput" maxlength="100" value="${attr(state.farmName||"")}"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelFarm">Cancel</button><button type="submit" class="primary">Save</button></div></form>`,()=>{document.getElementById("cancelFarm").onclick=closeModal;document.getElementById("farmProfileForm").onsubmit=e=>{e.preventDefault();state.farmName=document.getElementById("farmNameInput").value.trim()||"Cattle Records";saveState();closeModal();render()}})}
-function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Options</h2><div class="menu-list" style="margin-top:14px"><button class="soft" id="editCow">Edit brand number</button><button class="danger" id="deleteCow">Delete cow</button><button class="soft" id="closeCowMenu">Cancel</button></div></div>`,()=>{
+function showCowMenu(cow){openModal(`<div class="modal-card"><p class="eyebrow">Cow ${esc(cow.brand)}</p><h2>Options</h2><div class="menu-list" style="margin-top:14px"><button class="soft" id="addCowToList">Add to list</button><button class="soft" id="editCow">Edit brand number</button><button class="danger" id="deleteCow">Delete cow</button><button class="soft" id="closeCowMenu">Cancel</button></div></div>`,()=>{
   document.getElementById("closeCowMenu").onclick=closeModal;
+  document.getElementById("addCowToList").onclick=()=>showAddToListModal(cow);
   document.getElementById("editCow").onclick=()=>showEditCowModal(cow);
   document.getElementById("deleteCow").onclick=async()=>{
     if(!confirm(`Delete cow ${cow.brand} and all calf records?`))return;
