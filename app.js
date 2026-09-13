@@ -31,7 +31,7 @@ const initialData={
 };
 let state=loadState();
 if(!Array.isArray(state.owners))state.owners=[];
-let view={page:"login",cowId:null,ownerFilter:"",search:"",listId:null,cowReturnPage:"cattle",cowReturnListId:null};
+let view={page:"login",cowId:null,ownerFilter:"",search:"",listId:null,cowReturnPage:"cattle",cowReturnListId:null,cattleScrollTop:0};
 let pendingPhoto=null;
 let cowLists=[];
 let cowListsLoaded=false;
@@ -733,7 +733,7 @@ function renderHome(){
   usePage(`<main class="screen home-screen"><header class="topbar"><div class="home-branding"><div class="app-brand">Cattle Records</div><h1 class="farm-name">${esc(state.farmName||"Cattle Records")}</h1></div><button class="icon-button" id="menuBtn">☰</button></header><section class="home-actions"><button class="home-card" id="openCattle"><div class="home-card-row"><div class="home-card-icon">🐄</div><div class="home-card-copy"><div class="home-card-title">Cattle</div><div class="home-card-sub">${state.cows.length} cows · ${calved} calved this year</div></div><span class="chevron">›</span></div></button><button class="home-card" id="openChat"><div class="home-card-row"><div class="home-card-icon">💬</div><div class="home-card-copy"><div class="home-card-title">Farm Chat</div><div class="home-card-sub">${latest?`${esc(latest.user)}: ${esc(latest.text||"Photo")}`:"No messages yet"}</div></div><div>${latest?`<div class="chat-preview-date">${shortDate(latest.timestamp)}</div>`:""}<span class="chevron">›</span></div></div></button><button class="home-card" id="openLists"><div class="home-card-row"><div class="home-card-icon">📋</div><div class="home-card-copy"><div class="home-card-title">Lists</div><div class="home-card-sub">Shared cow lists for this farm</div></div><span class="chevron">›</span></div></button></section><section class="home-summary"><div class="mini-stat"><strong>${state.cows.length}</strong><span>Total cows</span></div><div class="mini-stat"><strong>${calved}</strong><span>Calved ${currentYear()}</span></div><div class="mini-stat"><strong>${dead}</strong><span>Dead calf flags</span></div></section>
 <section class="home-ranch-scene" aria-hidden="true"></section>
 </main>`);
-  document.getElementById("openCattle").onclick=()=>{view.page="cattle";render();syncCowsFromNeon()};
+  document.getElementById("openCattle").onclick=()=>{view.cattleScrollTop=0;view.page="cattle";render();syncCowsFromNeon()};
   document.getElementById("openChat").onclick=()=>{view.page="chat";render()};
   document.getElementById("openLists").onclick=()=>{view.page="lists";cowListsLoaded=false;cowListsError="";render();syncCowListsFromNeon({rerender:true})};
   document.getElementById("menuBtn").onclick=showFarmMenu;
@@ -903,6 +903,16 @@ function renderCattle(){
     </section>
   </main>`);
 
+  const cattleGrid=document.querySelector(".cattle-screen .cattle-grid");
+  if(cattleGrid){
+    requestAnimationFrame(()=>{
+      cattleGrid.scrollTop=Number(view.cattleScrollTop)||0;
+    });
+    cattleGrid.addEventListener("scroll",()=>{
+      view.cattleScrollTop=cattleGrid.scrollTop;
+    },{passive:true});
+  }
+
   document.getElementById("backHome").onclick=()=>{view.page="home";render()};
   document.getElementById("addMenuBtn").onclick=showAddMenu;
   document.getElementById("herdScoreBtn").onclick=()=>{view.page="herdScorecard";render()};
@@ -921,6 +931,7 @@ function renderCattle(){
   });
 
   document.querySelectorAll("[data-cow]").forEach(b=>b.onclick=()=>{
+    if(cattleGrid)view.cattleScrollTop=cattleGrid.scrollTop;
     view.cowId=b.dataset.cow;
     view.cowReturnPage="cattle";
     view.cowReturnListId=null;
