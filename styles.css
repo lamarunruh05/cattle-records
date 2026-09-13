@@ -1338,3 +1338,31 @@ body.home-layout .home-ranch-scene::before{
   body.home-layout .home-screen .home-card-title{font-size:.96rem}
   body.home-layout .home-screen .home-summary{margin-top:6px;padding-top:6px;padding-bottom:2px}
 }
+
+
+/* V56 — keep cattle controls fixed while only the cow grid scrolls */
+.cattle-screen{
+  height:100dvh;
+  min-height:0;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  padding-bottom:0;
+}
+.cattle-screen .topbar,
+.cattle-screen .cattle-tools,
+.cattle-screen .filter-bar,
+.cattle-screen .cattle-count{
+  flex:0 0 auto;
+}
+.cattle-screen .cattle-grid{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  padding-bottom:calc(24px + env(safe-area-inset-bottom));
+  scrollbar-width:none;
+}
+.cattle-screen .cattle-grid::-webkit-scrollbar{display:none}

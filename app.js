@@ -868,8 +868,8 @@ function renderCattle(){
     cows=cows.filter(c=>c.brand.toLowerCase().includes(q));
   }
 
-  usePage(`<main class="screen">
-    <header class="topbar">
+  usePage(`<main class="screen cattle-screen">
+    <header class="topbar cattle-fixed-header">
       <div class="back-title">
         <button class="icon-button" id="backHome">←</button>
         <h1 class="page-title">Cattle</h1>
