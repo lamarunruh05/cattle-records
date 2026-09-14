@@ -658,7 +658,57 @@ function usePage(html){
   app.innerHTML=html;
   modalRoot.innerHTML="";
 }
-function render(){if(view.page==="login")return renderLogin();if(view.page==="forgotPassword")return renderForgotPassword();if(view.page==="resetPassword")return renderResetPassword(new URLSearchParams(window.location.search).get("token")||"");if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="worstPerformance")return renderWorstPerformance();if(view.page==="lists")return renderLists();if(view.page==="listDetail")return renderListDetail();if(view.page==="chat")return renderChat();if(view.page==="activity")return renderActivity();if(view.page==="adminUsers")return renderAdminUsers();return renderHome()}
+let restoringBrowserHistory=false;
+function navSnapshot(){
+  return{
+    page:view.page,
+    cowId:view.cowId||null,
+    ownerFilter:view.ownerFilter||"",
+    search:view.search||"",
+    listId:view.listId||null,
+    cowReturnPage:view.cowReturnPage||"cattle",
+    cowReturnListId:view.cowReturnListId||null,
+    cattleScrollTop:Number(view.cattleScrollTop)||0
+  };
+}
+function navKey(v){
+  return JSON.stringify([v?.page||"",v?.cowId||null,v?.listId||null,v?.ownerFilter||"",v?.search||""]);
+}
+function writeCurrentNavState(){
+  const stateNow=history.state||{};
+  history.replaceState({...stateNow,cattleRecordsNav:navSnapshot()},"",window.location.href);
+}
+function syncBrowserHistory(){
+  if(restoringBrowserHistory){restoringBrowserHistory=false;return}
+  const snap=navSnapshot();
+  const current=history.state?.cattleRecordsNav;
+  if(!current){
+    history.replaceState({...history.state,cattleRecordsNav:snap},"",window.location.href);
+    return;
+  }
+  if(navKey(current)===navKey(snap)){
+    history.replaceState({...history.state,cattleRecordsNav:snap},"",window.location.href);
+    return;
+  }
+  const authPages=new Set(["login","forgotPassword","resetPassword"]);
+  if((snap.page==="home"&&authPages.has(current.page))||(snap.page==="login"&&current.page==="home")){
+    history.replaceState({...history.state,cattleRecordsNav:snap},"",window.location.href);
+    return;
+  }
+  history.pushState({...history.state,cattleRecordsNav:snap},"",window.location.href);
+}
+function appBack(fallback){
+  if(history.state?.cattleRecordsNav&&history.length>1){history.back();return}
+  fallback?.();
+}
+window.addEventListener("popstate",event=>{
+  const snap=event.state?.cattleRecordsNav;
+  if(!snap)return;
+  Object.assign(view,snap);
+  restoringBrowserHistory=true;
+  render();
+});
+function render(){syncBrowserHistory();if(view.page==="login")return renderLogin();if(view.page==="forgotPassword")return renderForgotPassword();if(view.page==="resetPassword")return renderResetPassword(new URLSearchParams(window.location.search).get("token")||"");if(view.page==="cattle")return renderCattle();if(view.page==="cow")return renderCow();if(view.page==="scorecard")return renderScorecard();if(view.page==="herdScorecard")return renderHerdScorecard();if(view.page==="worstPerformance")return renderWorstPerformance();if(view.page==="lists")return renderLists();if(view.page==="listDetail")return renderListDetail();if(view.page==="chat")return renderChat();if(view.page==="activity")return renderActivity();if(view.page==="adminUsers")return renderAdminUsers();return renderHome()}
 function renderLogin(errorMessage=""){
   usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Farm login</h1><p class="muted">Sign in with your farm account.</p>${errorMessage?`<p class="auth-error">${esc(errorMessage)}</p>`:""}<form class="stack" id="emailLoginForm"><label class="field"><span>Email</span><input id="loginEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><label class="field"><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Password"></label><button class="primary" id="emailLoginBtn" type="submit">Sign in</button><button class="auth-link" id="forgotPasswordBtn" type="button">Forgot password?</button></form></section></main>`);
   document.getElementById("forgotPasswordBtn").onclick=()=>{view.page="forgotPassword";render()};
@@ -694,7 +744,7 @@ function renderLogin(errorMessage=""){
 }
 function renderForgotPassword(message="",isError=false){
   usePage(`<main class="screen auth-screen"><section class="auth-card"><p class="eyebrow">Cattle Records</p><h1>Reset password</h1><p class="muted">Enter your account email and we'll send you a password reset link.</p>${message?`<p class="${isError?"auth-error":"auth-success"}">${esc(message)}</p>`:""}<form class="stack" id="forgotPasswordForm"><label class="field"><span>Email</span><input id="resetEmail" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com"></label><button class="primary" id="sendResetBtn" type="submit">Send reset link</button><button class="auth-link" id="backToLoginBtn" type="button">Back to sign in</button></form></section></main>`);
-  document.getElementById("backToLoginBtn").onclick=()=>{view.page="login";render()};
+  document.getElementById("backToLoginBtn").onclick=()=>appBack(()=>{view.page="login";render()});
   document.getElementById("forgotPasswordForm").onsubmit=async(event)=>{
     event.preventDefault();
     const btn=document.getElementById("sendResetBtn");
@@ -765,7 +815,7 @@ function renderActivity(){
       ${!activityLoaded?`<div class="activity-status"><span class="activity-spinner" aria-hidden="true"></span><span>Loading activity…</span></div>`:activityError?`<div class="empty activity-error"><strong>Could not load activity.</strong><br>${esc(activityError)}</div>`:rows||`<div class="empty"><strong>No activity yet.</strong><br>New cattle, calf, and owner changes will appear here.</div>`}
     </section>
   </main>`);
-  document.getElementById("backActivity").onclick=()=>{view.page="home";render()};
+  document.getElementById("backActivity").onclick=()=>appBack(()=>{view.page="home";render()});
   document.getElementById("refreshActivity").onclick=async()=>{
     const btn=document.getElementById("refreshActivity");
     btn.disabled=true;btn.textContent="Refreshing…";
@@ -910,10 +960,11 @@ function renderCattle(){
     });
     cattleGrid.addEventListener("scroll",()=>{
       view.cattleScrollTop=cattleGrid.scrollTop;
+      writeCurrentNavState();
     },{passive:true});
   }
 
-  document.getElementById("backHome").onclick=()=>{view.page="home";render()};
+  document.getElementById("backHome").onclick=()=>appBack(()=>{view.page="home";render()});
   document.getElementById("addMenuBtn").onclick=showAddMenu;
   document.getElementById("herdScoreBtn").onclick=()=>{view.page="herdScorecard";render()};
   document.getElementById("ownersBtn").onclick=showOwnersModal;
@@ -932,6 +983,7 @@ function renderCattle(){
 
   document.querySelectorAll("[data-cow]").forEach(b=>b.onclick=()=>{
     if(cattleGrid)view.cattleScrollTop=cattleGrid.scrollTop;
+    writeCurrentNavState();
     view.cowId=b.dataset.cow;
     view.cowReturnPage="cattle";
     view.cowReturnListId=null;
@@ -992,7 +1044,7 @@ function renderCow(){
     </section>
   </main>`);
 
-  document.getElementById("backCattle").onclick=()=>{view.page=view.cowReturnPage||"cattle";if(view.page==="listDetail"&&view.cowReturnListId)view.listId=view.cowReturnListId;render()};
+  document.getElementById("backCattle").onclick=()=>appBack(()=>{view.page=view.cowReturnPage||"cattle";if(view.page==="listDetail"&&view.cowReturnListId)view.listId=view.cowReturnListId;render()});
   document.getElementById("ownerInput").onchange=async e=>{
     const input=e.target,oldOwner=cow.owner||"",oldOwnerId=cow.ownerId||null,newName=input.value.trim();
     input.disabled=true;
@@ -1061,7 +1113,7 @@ function renderHerdScorecard(){
       </button>
     </div>
   </main>`);
-  document.getElementById("backCattle").onclick=()=>{view.page="cattle";render()};
+  document.getElementById("backCattle").onclick=()=>appBack(()=>{view.page="cattle";render()});
   document.getElementById("neverCalvedBtn").onclick=showNeverCalvedModal;
   document.getElementById("worstPerformanceBtn").onclick=()=>{view.page="worstPerformance";render()};
 }
@@ -1125,7 +1177,7 @@ function renderWorstPerformance(){
     <div class="performance-legend"><span><b class="legend-check">✓</b> live calf</span><span><b class="legend-dead">✕</b> calf died</span><span><b class="legend-blank"></b> no calf</span><span><b class="legend-na"></b> not yet eligible</span></div>
     <p class="herd-score-note">Live % = years with a live calf ÷ eligible completed years. A cow becomes eligible in the year of her first recorded calf. Current-year calving month is excluded from the percentage and ranking.</p>
   </main>`);
-  document.getElementById("backScorecard").onclick=()=>{view.page="herdScorecard";render()};
+  document.getElementById("backScorecard").onclick=()=>appBack(()=>{view.page="herdScorecard";render()});
   document.querySelectorAll("[data-performance-cow]").forEach(button=>button.onclick=()=>{
     view.cowId=button.dataset.performanceCow;
     view.cowReturnPage="worstPerformance";
@@ -1139,7 +1191,7 @@ function renderLists(){
     <header class="topbar"><div class="back-title"><button class="icon-button" id="backListsHome">←</button><div><p class="eyebrow">${esc(state.farmName||"Farm")}</p><h1 class="page-title">Lists</h1></div></div><button class="primary small" id="newListBtn">+ New</button></header>
     ${!cowListsLoaded?'<div class="empty">Loading shared lists…</div>':cowListsError?`<div class="empty"><strong>Could not load lists.</strong><br>${esc(cowListsError)}</div>`:cowLists.length?`<section class="cow-lists-grid">${cowLists.map(list=>`<button class="cow-list-card" data-list-id="${attr(list.id)}"><div><strong>${esc(list.name)}</strong><span>${list.cows.length} ${list.cows.length===1?"cow":"cows"}</span>${list.createdAt?`<span class="cow-list-created">Created ${esc(new Intl.DateTimeFormat("en",{month:"short",day:"numeric",year:"numeric"}).format(new Date(list.createdAt)))}</span>`:""}</div><span class="chevron">›</span></button>`).join("")}</section>`:'<div class="empty"><strong>No lists yet.</strong><br>Create a list such as “Cull cows 2026”.</div>'}
   </main>`);
-  document.getElementById("backListsHome").onclick=()=>{view.page="home";render()};
+  document.getElementById("backListsHome").onclick=()=>appBack(()=>{view.page="home";render()});
   document.getElementById("newListBtn").onclick=()=>showCreateListModal();
   document.querySelectorAll("[data-list-id]").forEach(button=>button.onclick=()=>{view.listId=button.dataset.listId;view.page="listDetail";render()});
 }
@@ -1150,7 +1202,7 @@ function renderListDetail(){
     <header class="topbar"><div class="back-title"><button class="icon-button" id="backAllLists">←</button><div><p class="eyebrow">Cow list</p><h1 class="page-title">${esc(list?.name||"Loading…")}</h1></div></div>${list?'<button class="icon-button" id="listMenuBtn">•••</button>':''}</header>
     ${!list?'<div class="empty">Loading list…</div>':list.cows.length?`<section class="list-cows-grid">${[...list.cows].sort((a,b)=>a.brand.localeCompare(b.brand,undefined,{numeric:true,sensitivity:"base"})).map(item=>`<div class="list-cow-row"><button class="list-cow-open" data-list-cow="${attr(item.cowId)}"><span class="list-cow-number">${esc(item.brand)}</span><span>Open profile ›</span></button><button class="list-cow-remove" data-remove-list-cow="${attr(item.cowId)}" aria-label="Remove cow ${attr(item.brand)} from list">×</button></div>`).join("")}</section>`:'<div class="empty"><strong>No cows in this list yet.</strong><br>Open a cow profile, tap •••, then choose Add to list.</div>'}
   </main>`);
-  document.getElementById("backAllLists").onclick=()=>{view.page="lists";render()};
+  document.getElementById("backAllLists").onclick=()=>appBack(()=>{view.page="lists";render()});
   const menu=document.getElementById("listMenuBtn");if(menu)menu.onclick=()=>showListMenu(list);
   document.querySelectorAll("[data-list-cow]").forEach(button=>button.onclick=()=>{view.cowId=button.dataset.listCow;view.cowReturnPage="listDetail";view.cowReturnListId=list.id;view.page="cow";render()});
   document.querySelectorAll("[data-remove-list-cow]").forEach(button=>button.onclick=async()=>{
@@ -1287,7 +1339,7 @@ function renderScorecard(){
       </table>
     </div>
   </main>`);
-  document.getElementById("backCow").onclick=()=>{view.page="cow";render()}
+  document.getElementById("backCow").onclick=()=>appBack(()=>{view.page="cow";render()})
 }
 let chatSyncInFlight=null;
 async function syncMessagesFromNeon({rerender=true}={}){
@@ -1354,7 +1406,7 @@ function renderChat(){
       </form>
     </section>
   </main>`);
-  document.getElementById("backHome").onclick=()=>{pendingPhoto=null;view.page="home";render()};
+  document.getElementById("backHome").onclick=()=>{pendingPhoto=null;appBack(()=>{view.page="home";render()})};
   document.getElementById("openMedia").onclick=()=>showChatMedia(notes);
   setupChatComposer();
   hydrateChatPhotos(document);
@@ -2167,7 +2219,7 @@ function renderAdminUsers(){
     <section class="admin-hero"><div><h2>People with farm access</h2><p>Invite users and manage who is an admin.</p></div><button class="primary small" id="createInviteBtn" type="button">+ Invite user</button></section>
     ${!adminLoaded?`<div class="activity-status"><span class="activity-spinner" aria-hidden="true"></span><span>Loading farm users…</span></div>`:adminError?`<div class="empty activity-error"><strong>Could not load farm users.</strong><br>${esc(adminError)}</div>`:`<section class="admin-section"><div class="admin-section-title"><h2>Users</h2><span>${farmMembers.length}</span></div><div class="farm-users-list">${membersHtml||'<div class="empty">No farm users found.</div>'}</div></section><section class="admin-section"><div class="admin-section-title"><h2>Pending invitations</h2><span>${farmInvites.length}</span></div><div class="pending-invites-list">${invitesHtml||'<div class="empty">No pending invitations.</div>'}</div></section>`}
   </main>`);
-  document.getElementById("backAdminUsers").onclick=()=>{view.page="home";render()};
+  document.getElementById("backAdminUsers").onclick=()=>appBack(()=>{view.page="home";render()});
   document.getElementById("refreshFarmUsers").onclick=async()=>{const btn=document.getElementById("refreshFarmUsers");btn.disabled=true;btn.textContent="Refreshing…";await syncAdminFromNeon()};
   const createBtn=document.getElementById("createInviteBtn");if(createBtn)createBtn.onclick=showCreateInviteModal;
   document.querySelectorAll("[data-user-actions]").forEach(btn=>{btn.onclick=()=>showMemberActions(btn.dataset.userActions)});
