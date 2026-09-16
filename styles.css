@@ -1382,3 +1382,31 @@ body.home-layout .home-ranch-scene::before{
   scrollbar-width:none;
 }
 .cattle-screen .cattle-grid::-webkit-scrollbar{display:none}
+
+/* ===== v61 owner management ===== */
+.owner-add-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  margin:16px 0 14px;
+}
+.owner-add-row input{min-width:0}
+.owner-add-btn{white-space:nowrap;padding-inline:16px}
+.owner-manage-list{gap:9px}
+.owner-manage-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 46px;
+  gap:8px;
+  align-items:stretch;
+}
+.owner-manage-row .owner-choice{width:100%;min-width:0}
+.owner-delete-btn{
+  min-height:48px;
+  padding:0;
+  border:1px solid rgba(158,60,52,.18);
+  background:var(--danger-soft);
+  color:var(--danger);
+  font-size:1.45rem;
+  font-weight:800;
+  line-height:1;
+}

@@ -1594,7 +1594,80 @@ function setupChatComposer(){
 
 function openModal(html,onReady){modalRoot.innerHTML=`<div class="modal-backdrop"><section class="modal">${html}</section></div>`;const b=modalRoot.querySelector(".modal-backdrop");b.onclick=e=>{if(e.target===b)closeModal()};onReady?.()}
 function closeModal(){modalRoot.innerHTML=""}
-function showOwnersModal(){const owners=state.owners.map(o=>o.name).filter(Boolean).sort((a,b)=>a.localeCompare(b));openModal(`<div class="modal-card"><div class="section-heading"><div><p class="eyebrow">Filter cattle</p><h2>Owners</h2></div><button class="icon-button" id="closeModal">×</button></div><div class="owner-list">${owners.length?owners.map(o=>`<button class="owner-choice" data-owner="${attr(o)}">${esc(o)}</button>`).join(""):`<div class="empty">No owners yet.</div>`}</div></div>`,()=>{document.getElementById("closeModal").onclick=closeModal;modalRoot.querySelectorAll("[data-owner]").forEach(b=>b.onclick=()=>{view.ownerFilter=b.dataset.owner;closeModal();render()})})}
+function showOwnersModal(){
+  const owners=[...state.owners].filter(o=>o?.name).sort((a,b)=>a.name.localeCompare(b.name));
+  openModal(`<div class="modal-card owners-manage-modal">
+    <div class="section-heading">
+      <div><p class="eyebrow">Filter cattle</p><h2>Owners</h2></div>
+      <button class="icon-button" id="closeModal">×</button>
+    </div>
+
+    <form class="owner-add-row" id="addOwnerForm">
+      <input id="addOwnerName" maxlength="80" placeholder="New owner name" autocomplete="off">
+      <button type="submit" class="soft owner-add-btn">+ Add</button>
+    </form>
+
+    <div class="owner-list owner-manage-list">
+      ${owners.length?owners.map(o=>`
+        <div class="owner-manage-row">
+          <button class="owner-choice" data-owner="${attr(o.name)}">${esc(o.name)}</button>
+          <button type="button" class="owner-delete-btn" data-delete-owner="${attr(o.id)}" data-owner-name="${attr(o.name)}" aria-label="Delete ${attr(o.name)}">×</button>
+        </div>`).join(""):`<div class="empty">No owners yet.</div>`}
+    </div>
+  </div>`,()=>{
+    document.getElementById("closeModal").onclick=closeModal;
+
+    modalRoot.querySelectorAll("[data-owner]").forEach(b=>b.onclick=()=>{
+      view.ownerFilter=b.dataset.owner;
+      closeModal();
+      render();
+    });
+
+    document.getElementById("addOwnerForm").onsubmit=async e=>{
+      e.preventDefault();
+      const input=document.getElementById("addOwnerName");
+      const name=input.value.trim();
+      if(!name)return;
+      const btn=e.currentTarget.querySelector('button[type="submit"]');
+      btn.disabled=true;
+      btn.textContent="Adding…";
+      try{
+        await ensureOwnerByName(name);
+        showOwnersModal();
+      }catch(err){
+        alert(`Could not add owner. ${err.message}`);
+        btn.disabled=false;
+        btn.textContent="+ Add";
+      }
+    };
+
+    modalRoot.querySelectorAll("[data-delete-owner]").forEach(btn=>btn.onclick=async()=>{
+      const ownerId=btn.dataset.deleteOwner;
+      const ownerName=btn.dataset.ownerName||"this owner";
+      if(!confirm(`Delete owner ${ownerName}? Cows assigned to this owner will be changed to no owner.`))return;
+      btn.disabled=true;
+      try{
+        const response=await apiFetch(`/api/owners/${encodeURIComponent(ownerId)}`,{method:"DELETE"});
+        const data=await response.json();
+        if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete owner");
+        state.owners=state.owners.filter(o=>String(o.id)!==String(ownerId));
+        state.cows.forEach(c=>{
+          if(String(c.ownerId||"")===String(ownerId)){
+            c.ownerId=null;
+            c.owner="";
+          }
+        });
+        if(view.ownerFilter===ownerName)view.ownerFilter="";
+        saveState();
+        showOwnersModal();
+        render();
+      }catch(err){
+        alert(`Could not delete owner. ${err.message}`);
+        btn.disabled=false;
+      }
+    });
+  });
+}
 
 
 function showAddMenu(){
@@ -1841,7 +1914,49 @@ function showBatchCalvesModal(){
     renderRows([]);
   });
 }
-function showAddCowModal(){openModal(`<form class="modal-card" id="addCowForm"><p class="eyebrow">New cow</p><h2>Add brand number</h2><div class="stack"><label><span>Brand number</span><input id="newBrand" required maxlength="30" inputmode="numeric"></label><label><span>Owner</span><input id="newOwner" maxlength="80" placeholder="Optional"></label></div><div class="modal-actions"><button type="button" class="soft" id="cancelCow">Cancel</button><button type="submit" class="primary" id="saveCowBtn">Add cow</button></div></form>`,()=>{document.getElementById("cancelCow").onclick=closeModal;document.getElementById("addCowForm").onsubmit=async e=>{e.preventDefault();const brand=document.getElementById("newBrand").value.trim(),ownerName=document.getElementById("newOwner").value.trim(),btn=document.getElementById("saveCowBtn");if(!brand)return;if(state.cows.some(c=>c.brand.toLowerCase()===brand.toLowerCase())){alert("That brand number already exists.");return}btn.disabled=true;btn.textContent="Saving…";try{const owner=await ensureOwnerByName(ownerName);const response=await apiFetch("/api/cows",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({brand_number:brand,owner_id:owner?.id||null,created_by:state.currentUser||null})});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not save cow");state.cows.push({id:data.cow.id,brand:data.cow.brand_number,ownerId:data.cow.owner_id||null,owner:owner?.name||"",calves:[]});saveState();closeModal();render()}catch(err){alert(`Could not save cow to the shared database. ${err.message}`);btn.disabled=false;btn.textContent="Add cow"}}})}
+function showAddCowModal(){
+  const owners=[...state.owners].filter(o=>o?.name).sort((a,b)=>a.name.localeCompare(b.name));
+  openModal(`<form class="modal-card" id="addCowForm">
+    <p class="eyebrow">New cow</p>
+    <h2>Add brand number</h2>
+    <div class="stack">
+      <label><span>Brand number</span><input id="newBrand" required maxlength="30" inputmode="numeric"></label>
+      <label><span>Owner (optional)</span>
+        <select id="newOwnerId">
+          <option value="">No owner</option>
+          ${owners.map(o=>`<option value="${attr(o.id)}">${esc(o.name)}</option>`).join("")}
+        </select>
+      </label>
+    </div>
+    <div class="modal-actions"><button type="button" class="soft" id="cancelCow">Cancel</button><button type="submit" class="primary" id="saveCowBtn">Add cow</button></div>
+  </form>`,()=>{
+    document.getElementById("cancelCow").onclick=closeModal;
+    document.getElementById("addCowForm").onsubmit=async e=>{
+      e.preventDefault();
+      const brand=document.getElementById("newBrand").value.trim();
+      const ownerId=document.getElementById("newOwnerId").value||null;
+      const owner=ownerId?ownerById(ownerId):null;
+      const btn=document.getElementById("saveCowBtn");
+      if(!brand)return;
+      if(state.cows.some(c=>c.brand.toLowerCase()===brand.toLowerCase())){alert("That brand number already exists.");return}
+      btn.disabled=true;
+      btn.textContent="Saving…";
+      try{
+        const response=await apiFetch("/api/cows",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({brand_number:brand,owner_id:ownerId,created_by:state.currentUser||null})});
+        const data=await response.json();
+        if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not save cow");
+        state.cows.push({id:data.cow.id,brand:data.cow.brand_number,ownerId:data.cow.owner_id||null,owner:owner?.name||"",calves:[]});
+        saveState();
+        closeModal();
+        render();
+      }catch(err){
+        alert(`Could not save cow to the shared database. ${err.message}`);
+        btn.disabled=false;
+        btn.textContent="Add cow";
+      }
+    };
+  });
+}
 function showCalfModal(cow,calf){
   const editing=!!calf;
   const current=calf||{
