@@ -1103,8 +1103,8 @@ function renderHerdScorecard(){
     <p class="herd-score-note">A cow starts counting in the year of her first recorded calf and remains eligible in each following year.</p>
 
     <div class="herd-bottom-actions">
-      <button class="never-calved-btn" id="neverCalvedBtn">
-        <span><strong>${state.cows.filter(c=>!c.calves||c.calves.length===0).length}</strong> cows have never calved</span>
+      <button class="never-calved-btn" id="notCalvedThisYearBtn">
+        <span><strong>${state.cows.filter(c=>!(c.calves||[]).some(x=>Number(x.year)===currentYear())).length}</strong> cows haven’t calved this year</span>
         <span>View cows ›</span>
       </button>
       <button class="never-calved-btn performance-list-btn" id="worstPerformanceBtn">
@@ -1114,7 +1114,7 @@ function renderHerdScorecard(){
     </div>
   </main>`);
   document.getElementById("backCattle").onclick=()=>appBack(()=>{view.page="cattle";render()});
-  document.getElementById("neverCalvedBtn").onclick=showNeverCalvedModal;
+  document.getElementById("notCalvedThisYearBtn").onclick=showNotCalvedThisYearModal;
   document.getElementById("worstPerformanceBtn").onclick=()=>{view.page="worstPerformance";render()};
 }
 function performanceRows(){
@@ -2022,27 +2022,28 @@ function showCalfModal(cow,calf){
   });
 }
 
-function showNeverCalvedModal(){
-  const cows=sortedCows(state.cows.filter(c=>!c.calves||c.calves.length===0));
+function showNotCalvedThisYearModal(){
+  const year=currentYear();
+  const cows=sortedCows(state.cows.filter(c=>!(c.calves||[]).some(x=>Number(x.year)===year)));
   openModal(`<section class="modal-card never-calved-modal">
     <p class="eyebrow">Herd Scorecard</p>
-    <h2>Never calved</h2>
-    <p class="muted">${cows.length} ${cows.length===1?"cow has":"cows have"} no calf records yet.</p>
+    <h2>Not calved in ${year}</h2>
+    <p class="muted">${cows.length} ${cows.length===1?"cow has":"cows have"} no calf recorded for ${year}.</p>
 
     <div class="never-calved-grid">
       ${cows.length?cows.map(c=>`
-        <button class="never-calved-cow" data-never-cow="${c.id}">
+        <button class="never-calved-cow" data-not-calved-cow="${c.id}">
           ${esc(c.brand)}
-        </button>`).join(""):`<div class="empty" style="grid-column:1/-1">Every cow has at least one calf record.</div>`}
+        </button>`).join(""):`<div class="empty" style="grid-column:1/-1">Every cow has a calf recorded for ${year}.</div>`}
     </div>
 
     <div class="modal-actions">
-      <button type="button" class="soft" id="closeNeverCalved">Close</button>
+      <button type="button" class="soft" id="closeNotCalvedThisYear">Close</button>
     </div>
   </section>`,()=>{
-    document.getElementById("closeNeverCalved").onclick=closeModal;
-    document.querySelectorAll("[data-never-cow]").forEach(b=>b.onclick=()=>{
-      view.cowId=b.dataset.neverCow;
+    document.getElementById("closeNotCalvedThisYear").onclick=closeModal;
+    document.querySelectorAll("[data-not-calved-cow]").forEach(b=>b.onclick=()=>{
+      view.cowId=b.dataset.notCalvedCow;
       view.page="cow";
       closeModal();
       render();
