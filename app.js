@@ -2031,10 +2031,15 @@ function showNotCalvedThisYearModal(){
     <p class="muted">${cows.length} ${cows.length===1?"cow has":"cows have"} no calf recorded for ${year}.</p>
 
     <div class="never-calved-grid">
-      ${cows.length?cows.map(c=>`
+      ${cows.length?cows.map(c=>{
+        const lastCalf=sortedCalves(c)[0]||null;
+        const lastCalving=lastCalf?`${monthName(Number(lastCalf.month))} ${lastCalf.year}`:"Hasn't calved";
+        return `
         <button class="never-calved-cow" data-not-calved-cow="${c.id}">
-          ${esc(c.brand)}
-        </button>`).join(""):`<div class="empty" style="grid-column:1/-1">Every cow has a calf recorded for ${year}.</div>`}
+          <strong>${esc(c.brand)}</strong>
+          <span>${esc(lastCalving)}</span>
+        </button>`;
+      }).join(""):`<div class="empty" style="grid-column:1/-1">Every cow has a calf recorded for ${year}.</div>`}
     </div>
 
     <div class="modal-actions">
