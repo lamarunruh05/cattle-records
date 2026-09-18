@@ -1418,3 +1418,15 @@ body.home-layout .home-ranch-scene::before{
   line-height:1;
 }
 .owner-more-btn:active{background:var(--soft);}
+
+
+/* v63 — No owner filter */
+.owner-no-owner-row .owner-choice{font-weight:800}
+.owner-no-owner-count{
+  min-width:46px;
+  text-align:center;
+  color:var(--muted,#7d877f);
+  font-weight:800;
+  font-size:.95rem;
+  padding:0 8px;
+}

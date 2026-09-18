@@ -934,7 +934,7 @@ function showClearActivityModal(){
 
 function renderCattle(){
   let cows=sortedCows(state.cows);
-  if(view.ownerFilter)cows=cows.filter(c=>c.owner===view.ownerFilter);
+  if(view.ownerFilter)cows=cows.filter(c=>view.ownerFilter==="__NO_OWNER__"?!String(c.owner||"").trim():c.owner===view.ownerFilter);
   if(view.search){
     const q=view.search.trim().toLowerCase();
     cows=cows.filter(c=>c.brand.toLowerCase().includes(q));
@@ -960,7 +960,7 @@ function renderCattle(){
       <button class="soft" id="ownersBtn">Owners</button>
     </section>
 
-    ${view.ownerFilter?`<div class="filter-bar"><span>Owner: ${esc(view.ownerFilter)}</span><button class="link-btn" id="clearOwner">Clear</button></div>`:""}
+    ${view.ownerFilter?`<div class="filter-bar"><span>Owner: ${esc(view.ownerFilter==="__NO_OWNER__"?"No owner":view.ownerFilter)}</span><button class="link-btn" id="clearOwner">Clear</button></div>`:""}
 
     <div class="cattle-count">${cows.length} ${cows.length===1?"cow":"cows"}</div>
 
@@ -1630,14 +1630,25 @@ function showOwnersModal(){
     </form>
 
     <div class="owner-list owner-manage-list">
-      ${owners.length?owners.map(o=>`
+      <div class="owner-manage-row owner-no-owner-row">
+        <button class="owner-choice" data-no-owner="1">No owner</button>
+        <span class="owner-no-owner-count">${state.cows.filter(c=>!String(c.owner||"").trim()).length}</span>
+      </div>
+      ${owners.map(o=>`
         <div class="owner-manage-row">
           <button class="owner-choice" data-owner="${attr(o.name)}">${esc(o.name)}</button>
           <button type="button" class="owner-more-btn" data-owner-more="${attr(o.id)}" aria-label="Options for ${attr(o.name)}">⋮</button>
-        </div>`).join(""):`<div class="empty">No owners yet.</div>`}
+        </div>`).join("")}
     </div>
   </div>`,()=>{
     document.getElementById("closeModal").onclick=closeModal;
+
+    const noOwnerBtn=modalRoot.querySelector("[data-no-owner]");
+    if(noOwnerBtn)noOwnerBtn.onclick=()=>{
+      view.ownerFilter="__NO_OWNER__";
+      closeModal();
+      render();
+    };
 
     modalRoot.querySelectorAll("[data-owner]").forEach(b=>b.onclick=()=>{
       view.ownerFilter=b.dataset.owner;
