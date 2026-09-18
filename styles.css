@@ -1394,19 +1394,27 @@ body.home-layout .home-ranch-scene::before{
 .owner-add-btn{white-space:nowrap;padding-inline:16px}
 .owner-manage-list{gap:9px}
 .owner-manage-row{
-  display:grid;
-  grid-template-columns:minmax(0,1fr) 46px;
-  gap:8px;
-  align-items:stretch;
+  position:relative;
+  display:block;
 }
-.owner-manage-row .owner-choice{width:100%;min-width:0}
-.owner-delete-btn{
-  min-height:48px;
+.owner-manage-row .owner-choice{
+  width:100%;
+  min-width:0;
+  padding-right:58px;
+}
+.owner-more-btn{
+  position:absolute;
+  top:50%;
+  right:8px;
+  transform:translateY(-50%);
+  width:42px;
+  min-height:42px;
   padding:0;
-  border:1px solid rgba(158,60,52,.18);
-  background:var(--danger-soft);
-  color:var(--danger);
-  font-size:1.45rem;
+  border:0;
+  background:transparent;
+  color:var(--text);
+  font-size:1.65rem;
   font-weight:800;
   line-height:1;
 }
+.owner-more-btn:active{background:var(--soft);}

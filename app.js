@@ -162,12 +162,34 @@ async function getAuthToken(session=null){
   }
   return token.trim();
 }
+async function refreshAuthSession(){
+  const fresh=await getAuthSession();
+  if(!fresh?.user)throw new Error("Your sign-in session has expired. Please sign in again.");
+  authSession=fresh;
+  return fresh;
+}
 async function apiFetch(path,options={}){
-  const token=await getAuthToken(authSession);
-  const headers=new Headers(options.headers||{});
-  headers.set("Authorization",`Bearer ${token}`);
-  if(!headers.has("Accept"))headers.set("Accept","application/json");
-  return fetch(`${API_BASE}${path}`,{...options,headers});
+  // Always ask Neon Auth for the current session before an API request.
+  // A long-open installed PWA can otherwise keep using an expired JWT even
+  // though Neon Auth still has a valid refresh session.
+  let session=await refreshAuthSession();
+  let token=await getAuthToken(session);
+  const makeRequest=async authToken=>{
+    const headers=new Headers(options.headers||{});
+    headers.set("Authorization",`Bearer ${authToken}`);
+    if(!headers.has("Accept"))headers.set("Accept","application/json");
+    return fetch(`${API_BASE}${path}`,{...options,headers});
+  };
+
+  let response=await makeRequest(token);
+  if(response.status===401){
+    // The token may have expired between loading the app and this request.
+    // Re-read/refresh the session and retry once automatically.
+    session=await refreshAuthSession();
+    token=await getAuthToken(session);
+    response=await makeRequest(token);
+  }
+  return response;
 }
 
 async function publicApiFetch(path,options={}){
@@ -1611,7 +1633,7 @@ function showOwnersModal(){
       ${owners.length?owners.map(o=>`
         <div class="owner-manage-row">
           <button class="owner-choice" data-owner="${attr(o.name)}">${esc(o.name)}</button>
-          <button type="button" class="owner-delete-btn" data-delete-owner="${attr(o.id)}" data-owner-name="${attr(o.name)}" aria-label="Delete ${attr(o.name)}">×</button>
+          <button type="button" class="owner-more-btn" data-owner-more="${attr(o.id)}" aria-label="Options for ${attr(o.name)}">⋮</button>
         </div>`).join(""):`<div class="empty">No owners yet.</div>`}
     </div>
   </div>`,()=>{
@@ -1641,34 +1663,102 @@ function showOwnersModal(){
       }
     };
 
-    modalRoot.querySelectorAll("[data-delete-owner]").forEach(btn=>btn.onclick=async()=>{
-      const ownerId=btn.dataset.deleteOwner;
-      const ownerName=btn.dataset.ownerName||"this owner";
-      if(!confirm(`Delete owner ${ownerName}? Cows assigned to this owner will be changed to no owner.`))return;
-      btn.disabled=true;
-      try{
-        const response=await apiFetch(`/api/owners/${encodeURIComponent(ownerId)}`,{method:"DELETE"});
-        const data=await response.json();
-        if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete owner");
-        state.owners=state.owners.filter(o=>String(o.id)!==String(ownerId));
-        state.cows.forEach(c=>{
-          if(String(c.ownerId||"")===String(ownerId)){
-            c.ownerId=null;
-            c.owner="";
-          }
-        });
-        if(view.ownerFilter===ownerName)view.ownerFilter="";
-        saveState();
-        showOwnersModal();
-        render();
-      }catch(err){
-        alert(`Could not delete owner. ${err.message}`);
-        btn.disabled=false;
-      }
+    modalRoot.querySelectorAll("[data-owner-more]").forEach(btn=>btn.onclick=()=>{
+      const owner=ownerById(btn.dataset.ownerMore);
+      if(owner)showOwnerOptions(owner);
     });
   });
 }
 
+function showOwnerOptions(owner){
+  openModal(`<div class="modal-card">
+    <div class="section-heading">
+      <div><p class="eyebrow">Owner</p><h2>${esc(owner.name)}</h2></div>
+      <button class="icon-button" id="closeOwnerOptions">×</button>
+    </div>
+    <div class="menu-list" style="margin-top:14px">
+      <button class="soft" id="editOwnerBtn">Edit owner</button>
+      <button class="danger" id="deleteOwnerBtn">Delete owner</button>
+      <button class="soft" id="backOwnersBtn">Back</button>
+    </div>
+  </div>`,()=>{
+    document.getElementById("closeOwnerOptions").onclick=closeModal;
+    document.getElementById("backOwnersBtn").onclick=showOwnersModal;
+    document.getElementById("editOwnerBtn").onclick=()=>showEditOwnerModal(owner);
+    document.getElementById("deleteOwnerBtn").onclick=()=>deleteOwnerFromMenu(owner);
+  });
+}
+
+function showEditOwnerModal(owner){
+  openModal(`<form class="modal-card" id="editOwnerForm">
+    <p class="eyebrow">Owner</p>
+    <h2>Edit owner</h2>
+    <div class="stack" style="margin-top:14px">
+      <label><span>Name</span><input id="editOwnerName" maxlength="80" value="${attr(owner.name)}" required autocomplete="off"></label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="soft" id="cancelEditOwner">Cancel</button>
+      <button type="submit" class="primary" id="saveEditOwner">Save</button>
+    </div>
+  </form>`,()=>{
+    document.getElementById("cancelEditOwner").onclick=showOwnersModal;
+    document.getElementById("editOwnerForm").onsubmit=async e=>{
+      e.preventDefault();
+      const name=document.getElementById("editOwnerName").value.trim();
+      if(!name)return;
+      const btn=document.getElementById("saveEditOwner");
+      btn.disabled=true;
+      btn.textContent="Saving…";
+      try{
+        const response=await apiFetch(`/api/owners/${encodeURIComponent(owner.id)}`,{
+          method:"PUT",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({name})
+        });
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not edit owner");
+        const oldName=owner.name;
+        owner.name=String(data.owner?.name||name);
+        state.cows.forEach(c=>{
+          if(String(c.ownerId||"")===String(owner.id))c.owner=owner.name;
+        });
+        if(view.ownerFilter===oldName)view.ownerFilter=owner.name;
+        saveState();
+        showOwnersModal();
+        render();
+      }catch(err){
+        alert(`Could not edit owner. ${err.message}`);
+        btn.disabled=false;
+        btn.textContent="Save";
+      }
+    };
+  });
+}
+
+async function deleteOwnerFromMenu(owner){
+  if(!confirm(`Delete owner ${owner.name}? Cows assigned to this owner will be changed to no owner.`))return;
+  const btn=document.getElementById("deleteOwnerBtn");
+  if(btn){btn.disabled=true;btn.textContent="Deleting…"}
+  try{
+    const response=await apiFetch(`/api/owners/${encodeURIComponent(owner.id)}`,{method:"DELETE"});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||!data.ok)throw new Error(data.error||data.message||"Could not delete owner");
+    state.owners=state.owners.filter(o=>String(o.id)!==String(owner.id));
+    state.cows.forEach(c=>{
+      if(String(c.ownerId||"")===String(owner.id)){
+        c.ownerId=null;
+        c.owner="";
+      }
+    });
+    if(view.ownerFilter===owner.name)view.ownerFilter="";
+    saveState();
+    showOwnersModal();
+    render();
+  }catch(err){
+    alert(`Could not delete owner. ${err.message}`);
+    if(btn){btn.disabled=false;btn.textContent="Delete owner"}
+  }
+}
 
 function showAddMenu(){
   openModal(`<section class="modal-card add-menu-modal">
