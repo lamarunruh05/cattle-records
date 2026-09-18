@@ -1630,15 +1630,14 @@ function showOwnersModal(){
     </form>
 
     <div class="owner-list owner-manage-list">
-      <div class="owner-manage-row owner-no-owner-row">
-        <button class="owner-choice" data-no-owner="1">No owner</button>
-        <span class="owner-no-owner-count">${state.cows.filter(c=>!String(c.owner||"").trim()).length}</span>
-      </div>
       ${owners.map(o=>`
         <div class="owner-manage-row">
           <button class="owner-choice" data-owner="${attr(o.name)}">${esc(o.name)}</button>
           <button type="button" class="owner-more-btn" data-owner-more="${attr(o.id)}" aria-label="Options for ${attr(o.name)}">⋮</button>
         </div>`).join("")}
+      <div class="owner-manage-row owner-no-owner-row">
+        <button class="owner-choice" data-no-owner="1">No owner</button>
+      </div>
     </div>
   </div>`,()=>{
     document.getElementById("closeModal").onclick=closeModal;
@@ -2285,7 +2284,7 @@ async function getPushRegistration(){
   if(!pushNotificationsSupported())throw new Error("Push notifications are not supported on this device/browser.");
   let registration=await navigator.serviceWorker.getRegistration();
   if(!registration){
-    registration=await navigator.serviceWorker.register("./service-worker.js?v=50",{updateViaCache:"none"});
+    registration=await navigator.serviceWorker.register("./service-worker.js?v=64",{updateViaCache:"none"});
   }
   if(!registration.active){
     const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error("The app service worker is still starting. Close and reopen Cattle Records, then try again.")),8000));
@@ -2412,7 +2411,7 @@ async function installPwa(){
 function registerServiceWorker(){
   if(!("serviceWorker" in navigator))return;
   window.addEventListener("load",()=>{
-    navigator.serviceWorker.register("./service-worker.js?v=50",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
+    navigator.serviceWorker.register("./service-worker.js?v=64",{updateViaCache:"none"}).then(reg=>reg.update().catch(()=>null)).catch(err=>console.error("Service worker registration failed",err));
   });
 }
 registerServiceWorker();
