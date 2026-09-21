@@ -1453,7 +1453,8 @@ body.home-layout .home-ranch-scene::before{
   .cattle-screen .cattle-number{height:68px;min-height:68px}
 }
 
-/* v66: cow references can be linked inside ordinary Farm Chat sentences */
+
+/* v66 clean rebuild: cow references can be linked inside Farm Chat sentences */
 .message-cow-link.inline{
   display:inline;
   width:auto;

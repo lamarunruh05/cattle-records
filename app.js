@@ -1396,28 +1396,29 @@ function renderChatTextWithCowLinks(text){
   const value=String(text||"");
   if(!value)return "";
 
-  const cowsByBrand=new Map();
-  for(const cow of state.cows){
-    const brand=String(cow.brand||"").trim();
-    if(brand)cowsByBrand.set(brand.toLowerCase(),cow);
-  }
-
-  const isWordChar=ch=>!!ch&&/[A-Za-z0-9]/.test(ch);
   const matches=[];
+  const lowerValue=value.toLowerCase();
+
   for(const cow of state.cows){
     const brand=String(cow.brand||"").trim();
     if(!brand)continue;
-    const lowerValue=value.toLowerCase();
+
     const lowerBrand=brand.toLowerCase();
     let from=0;
+
     while(from<value.length){
       const index=lowerValue.indexOf(lowerBrand,from);
       if(index<0)break;
+
       const before=index>0?value[index-1]:"";
       const after=index+brand.length<value.length?value[index+brand.length]:"";
-      if(!isWordChar(before)&&!isWordChar(after)){
+      const beforeIsWord=!!before&&/[A-Za-z0-9]/.test(before);
+      const afterIsWord=!!after&&/[A-Za-z0-9]/.test(after);
+
+      if(!beforeIsWord&&!afterIsWord){
         matches.push({start:index,end:index+brand.length,cow});
       }
+
       from=index+Math.max(1,brand.length);
     }
   }
@@ -1427,6 +1428,7 @@ function renderChatTextWithCowLinks(text){
   matches.sort((a,b)=>(a.start-b.start)||((b.end-b.start)-(a.end-a.start)));
   const chosen=[];
   let lastEnd=-1;
+
   for(const match of matches){
     if(match.start<lastEnd)continue;
     chosen.push(match);
@@ -1435,12 +1437,14 @@ function renderChatTextWithCowLinks(text){
 
   let html="";
   let pos=0;
+
   for(const match of chosen){
     html+=esc(value.slice(pos,match.start));
     const shown=value.slice(match.start,match.end);
     html+=`<button class="message-cow-link inline" type="button" data-chat-cow="${attr(match.cow.id)}" aria-label="Open cow ${attr(match.cow.brand)}">${esc(shown)}</button>`;
     pos=match.end;
   }
+
   html+=esc(value.slice(pos));
   return `<div class="message-text message-text-with-links">${html}</div>`;
 }
