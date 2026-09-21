@@ -1475,3 +1475,11 @@ body.home-layout .home-ranch-scene::before{
 }
 .message-cow-link.inline:active{opacity:.7}
 .message-text-with-links{white-space:pre-wrap}
+
+
+/* V67 — keep the home dashboard locked to the viewport center */
+html,body{max-width:100%;overflow-x:hidden}
+body.home-layout #app{display:flex;justify-content:center}
+body.home-layout .home-screen{left:auto;right:auto;margin:0;width:100%;max-width:760px;transform:none}
+body.home-layout .home-actions,body.home-layout .home-summary,body.home-layout .topbar{width:100%;min-width:0}
+body.home-layout .home-card{max-width:100%;min-width:0}

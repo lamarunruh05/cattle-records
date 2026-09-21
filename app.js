@@ -1048,13 +1048,15 @@ function renderCow(){
 
       <div class="cow-calves-scroll">
         ${calves.length?calves.map(c=>{
-          const meta=[c.gender,c.color].filter(Boolean).join(" · ");
-          return `<button class="calf-card" data-calf="${c.id}">
+          const note=String(c.notes||"").trim();
+          const shortNote=note.length>80?note.slice(0,77).trimEnd()+"…":note;
+          const meta=[c.gender,c.color,shortNote].filter(Boolean).join(" · ");
+          return `<button class="calf-card" data-calf="${c.id}" ${note?`title="${attr(note)}"`:""}>
             <div class="calf-top">
               <span class="calf-date">${fullMonthName(c.month)} ${c.year}</span>
               ${c.dead?`<span class="dead-badge">Died</span>`:""}
             </div>
-            <div class="calf-meta">${meta||"No extra information"}</div>
+            <div class="calf-meta">${meta?esc(meta):"No extra information"}</div>
           </button>`;
         }).join(""):`<div class="empty">No calf records yet.</div>`}
       </div>
