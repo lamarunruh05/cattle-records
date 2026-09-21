@@ -1422,3 +1422,33 @@ body.home-layout .home-ranch-scene::before{
 
 /* v64 — No owner filter lives at the bottom and looks like a normal filter row. */
 .owner-no-owner-row .owner-choice{padding-right:15px;font-weight:inherit}
+
+
+/* ===== v65 fixed cattle tile size + clickable cow numbers in chat ===== */
+.cattle-screen .cattle-grid{
+  align-content:start;
+  grid-auto-rows:70px;
+}
+.cattle-screen .cattle-number{
+  height:70px;
+  min-height:70px;
+}
+.message-cow-link{
+  display:inline-block;
+  min-height:0;
+  padding:2px 0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--accent);
+  font:inherit;
+  font-weight:850;
+  line-height:1.4;
+  text-decoration:underline;
+  text-decoration-thickness:1px;
+  text-underline-offset:3px;
+}
+@media(max-width:420px){
+  .cattle-screen .cattle-grid{grid-auto-rows:68px}
+  .cattle-screen .cattle-number{height:68px;min-height:68px}
+}

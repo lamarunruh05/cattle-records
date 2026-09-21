@@ -1392,6 +1392,12 @@ async function syncMessagesFromNeon({rerender=true}={}){
   return chatSyncInFlight;
 }
 
+function cowFromChatText(text){
+  const value=String(text||"").trim();
+  if(!value)return null;
+  return state.cows.find(c=>String(c.brand||"").trim().toLowerCase()===value.toLowerCase())||null;
+}
+
 function renderChat(){
   const notes=[...state.notes].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
   const media=notes.filter(n=>n.photo);
@@ -1411,7 +1417,7 @@ function renderChat(){
       ${notes.length?notes.map(n=>`<div class="message-row ${n.user===state.currentUser?"me":""}">
         <article class="message-bubble">
           <div class="message-topline"><div class="message-meta">${esc(n.user)} · ${formatDateTime(n.timestamp)}</div><button class="message-menu-btn" type="button" data-message-menu="${attr(n.id)}" aria-label="Message options">•••</button></div>
-          ${n.text?`<div class="message-text">${esc(n.text)}</div>`:""}
+          ${n.text?(()=>{const chatCow=cowFromChatText(n.text);return chatCow?`<button class="message-cow-link" type="button" data-chat-cow="${attr(chatCow.id)}" aria-label="Open cow ${attr(chatCow.brand)}">${esc(n.text)}</button>`:`<div class="message-text">${esc(n.text)}</div>`})():""}
           ${n.photo?`<button class="chat-photo-button" type="button" data-chat-photo-id="${attr(n.id)}" data-photo-shell><div class="chat-photo-loading">Loading photo…</div><img data-chat-media-id="${attr(n.id)}" alt="Farm chat photo" hidden></button>`:""}
         </article>
       </div>`).join(""):`<div class="empty">No messages yet.</div>`}
@@ -1434,6 +1440,15 @@ function renderChat(){
   hydrateChatPhotos(document);
   document.querySelectorAll("[data-chat-photo-id]").forEach(btn=>{btn.onclick=()=>{const n=state.notes.find(x=>String(x.id)===String(btn.dataset.chatPhotoId));if(n)openPhotoViewer(n)}});
   document.querySelectorAll("[data-message-menu]").forEach(btn=>{btn.onclick=()=>showMessageMenu(btn.dataset.messageMenu)});
+  document.querySelectorAll("[data-chat-cow]").forEach(btn=>{btn.onclick=()=>{
+    const cow=state.cows.find(c=>String(c.id)===String(btn.dataset.chatCow));
+    if(!cow)return;
+    view.cowId=cow.id;
+    view.cowReturnPage="chat";
+    view.cowReturnListId=null;
+    view.page="cow";
+    render();
+  }});
   const list=document.getElementById("chatList");
   if(list)list.scrollTop=list.scrollHeight;
 }
