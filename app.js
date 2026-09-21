@@ -1392,10 +1392,57 @@ async function syncMessagesFromNeon({rerender=true}={}){
   return chatSyncInFlight;
 }
 
-function cowFromChatText(text){
-  const value=String(text||"").trim();
-  if(!value)return null;
-  return state.cows.find(c=>String(c.brand||"").trim().toLowerCase()===value.toLowerCase())||null;
+function renderChatTextWithCowLinks(text){
+  const value=String(text||"");
+  if(!value)return "";
+
+  const cowsByBrand=new Map();
+  for(const cow of state.cows){
+    const brand=String(cow.brand||"").trim();
+    if(brand)cowsByBrand.set(brand.toLowerCase(),cow);
+  }
+
+  const isWordChar=ch=>!!ch&&/[A-Za-z0-9]/.test(ch);
+  const matches=[];
+  for(const cow of state.cows){
+    const brand=String(cow.brand||"").trim();
+    if(!brand)continue;
+    const lowerValue=value.toLowerCase();
+    const lowerBrand=brand.toLowerCase();
+    let from=0;
+    while(from<value.length){
+      const index=lowerValue.indexOf(lowerBrand,from);
+      if(index<0)break;
+      const before=index>0?value[index-1]:"";
+      const after=index+brand.length<value.length?value[index+brand.length]:"";
+      if(!isWordChar(before)&&!isWordChar(after)){
+        matches.push({start:index,end:index+brand.length,cow});
+      }
+      from=index+Math.max(1,brand.length);
+    }
+  }
+
+  if(!matches.length)return `<div class="message-text">${esc(value)}</div>`;
+
+  matches.sort((a,b)=>(a.start-b.start)||((b.end-b.start)-(a.end-a.start)));
+  const chosen=[];
+  let lastEnd=-1;
+  for(const match of matches){
+    if(match.start<lastEnd)continue;
+    chosen.push(match);
+    lastEnd=match.end;
+  }
+
+  let html="";
+  let pos=0;
+  for(const match of chosen){
+    html+=esc(value.slice(pos,match.start));
+    const shown=value.slice(match.start,match.end);
+    html+=`<button class="message-cow-link inline" type="button" data-chat-cow="${attr(match.cow.id)}" aria-label="Open cow ${attr(match.cow.brand)}">${esc(shown)}</button>`;
+    pos=match.end;
+  }
+  html+=esc(value.slice(pos));
+  return `<div class="message-text message-text-with-links">${html}</div>`;
 }
 
 function renderChat(){
@@ -1417,7 +1464,7 @@ function renderChat(){
       ${notes.length?notes.map(n=>`<div class="message-row ${n.user===state.currentUser?"me":""}">
         <article class="message-bubble">
           <div class="message-topline"><div class="message-meta">${esc(n.user)} · ${formatDateTime(n.timestamp)}</div><button class="message-menu-btn" type="button" data-message-menu="${attr(n.id)}" aria-label="Message options">•••</button></div>
-          ${n.text?(()=>{const chatCow=cowFromChatText(n.text);return chatCow?`<button class="message-cow-link" type="button" data-chat-cow="${attr(chatCow.id)}" aria-label="Open cow ${attr(chatCow.brand)}">${esc(n.text)}</button>`:`<div class="message-text">${esc(n.text)}</div>`})():""}
+          ${n.text?renderChatTextWithCowLinks(n.text):""}
           ${n.photo?`<button class="chat-photo-button" type="button" data-chat-photo-id="${attr(n.id)}" data-photo-shell><div class="chat-photo-loading">Loading photo…</div><img data-chat-media-id="${attr(n.id)}" alt="Farm chat photo" hidden></button>`:""}
         </article>
       </div>`).join(""):`<div class="empty">No messages yet.</div>`}

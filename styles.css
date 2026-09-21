@@ -1452,3 +1452,25 @@ body.home-layout .home-ranch-scene::before{
   .cattle-screen .cattle-grid{grid-auto-rows:68px}
   .cattle-screen .cattle-number{height:68px;min-height:68px}
 }
+
+/* v66: cow references can be linked inside ordinary Farm Chat sentences */
+.message-cow-link.inline{
+  display:inline;
+  width:auto;
+  min-width:0;
+  padding:0;
+  margin:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--green,#2f654d);
+  font:inherit;
+  font-weight:800;
+  line-height:inherit;
+  text-decoration:underline;
+  text-underline-offset:3px;
+  cursor:pointer;
+  vertical-align:baseline;
+}
+.message-cow-link.inline:active{opacity:.7}
+.message-text-with-links{white-space:pre-wrap}
